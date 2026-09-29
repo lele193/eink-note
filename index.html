@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>墨水屏库存便利贴 · 分栏排版</title>
+<style>
+  :root{--bg:#0f1115;--panel:#171a21;--line:#272c36;--fg:#e6e8ee;--dim:#8b93a3;--acc:#5b9dff}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",sans-serif}
+  header{padding:11px 14px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:10px}
+  header h1{font-size:15px;margin:0;font-weight:600}
+  header .sub{font-size:11px;color:var(--dim)}
+  main{display:grid;grid-template-columns:345px 1fr;height:calc(100vh - 46px)}
+  @media(max-width:880px){main{grid-template-columns:1fr;grid-template-rows:auto auto;height:auto}}
+  .side{overflow:auto;padding:12px;border-right:1px solid var(--line)}
+  @media(max-width:880px){.side{border-right:0;border-bottom:1px solid var(--line)}}
+  .stage{overflow:auto;padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px;background:#0b0d11}
+  fieldset{border:1px solid var(--line);border-radius:10px;margin:0 0 12px;padding:10px 10px 12px}
+  legend{font-size:11px;color:var(--dim);padding:0 5px;letter-spacing:.06em}
+  label{display:block;font-size:12px;color:var(--dim);margin:9px 0 4px}
+  input[type=text],input[type=number],select,textarea{width:100%;background:#0c0e13;border:1px solid var(--line);
+    color:var(--fg);border-radius:7px;padding:7px 9px;font:inherit;font-size:13px;outline:none}
+  textarea{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.6;resize:vertical;min-height:230px}
+  textarea:focus,input:focus,select:focus{border-color:var(--acc)}
+  .row{display:flex;gap:8px}.row>*{flex:1;min-width:0}
+  input[type=range]{width:100%;accent-color:var(--acc)}
+  .chk{display:flex;align-items:center;gap:7px;margin:8px 0;font-size:13px;cursor:pointer}
+  .chk input{accent-color:var(--acc);width:15px;height:15px;flex:none}
+  .hint{font-size:11px;color:var(--dim);margin-top:5px;line-height:1.55}
+  .hint code{background:#0c0e13;padding:1px 4px;border-radius:3px;font-size:11px}
+  .btns{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
+  button{background:#222735;border:1px solid var(--line);color:var(--fg);border-radius:7px;padding:8px 12px;
+    font:inherit;font-size:13px;cursor:pointer}
+  button:hover{background:#2b3140}
+  button.pri{background:var(--acc);border-color:var(--acc);color:#07101f;font-weight:600}
+  #preview{background:#fff;border-radius:4px;box-shadow:0 8px 30px rgba(0,0,0,.55);image-rendering:pixelated;display:block}
+  .meta{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--dim);text-align:center;
+    line-height:1.7;white-space:pre-wrap;max-width:640px}
+  .meta.warn{color:var(--warn,#ffb454)}
+  details{margin-top:8px}summary{font-size:12px;color:var(--dim);cursor:pointer}
+  textarea.hex{font-size:11px;min-height:120px}
+  .presets{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+  .presets button{padding:4px 8px;font-size:11px}
+  .presets button.on{background:var(--acc);border-color:var(--acc);color:#07101f}
+</style>
+</head>
+<body>
+<header>
+  <h1>墨水屏库存便利贴</h1>
+  <span class="sub">分栏卡片 → 1bit 位图（阶段一）</span>
+</header>
+
+<main>
+<div class="side">
+
+  <fieldset>
+    <legend>标题背景色</legend>
+    <label>标题文字</label>
+    <input type="text" id="title" placeholder="备货库存">
+    <label>样式</label>
+    <select id="hdrstyle">
+      <option value="gray">中灰网点底 + 反白字</option>
+      <option value="solid">纯黑底 + 反白字</option>
+      <option value="none">无底 + 黑字</option>
+    </select>
+    <label>深浅 <span id="hdrgrayv" class="hint" style="display:inline"></span></label>
+    <input type="range" id="hdrgray" min="0" max="100" step="25">
+    <div class="hint">1bpp 没有连续灰，深浅靠网点密度表现：50% 是 2×2 棋盘，75% 每 4 个像素涂 3 个。拖到 100% 等同纯黑。</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>清单内容</legend>
+    <textarea id="src" spellcheck="false"></textarea>
+    <div class="hint">
+      <code>@分类名</code> 开始一个新分类，下面是条目；<code>名称 ×3</code> 表示还剩 3 个，不写数量默认 ×1。<br>
+      排版参数已固定为调好的方案（400×300 · 四栏 · 分类名大、条目小），无需再调。
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>导出</legend>
+    <div class="btns">
+      <button class="pri" id="dlpng">下载 1bit PNG</button>
+      <button id="cphex">复制帧缓冲</button>
+      <button id="dlhex">下载 .txt</button>
+    </div>
+    <details><summary>帧缓冲 HEX 预览</summary>
+      <textarea class="hex" id="hexout" readonly spellcheck="false"></textarea>
+      <div class="hint">格式 <code>FW:&lt;偏移&gt;:&lt;hex&gt;</code>，末行补 <code>FAPPLY</code>。MSB 在左，黑 = 1。</div>
+    </details>
+  </fieldset>
+
+</div>
+
+<div class="stage">
+  <canvas id="preview"></canvas>
+  <div class="meta" id="meta"></div>
+</div>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const FONT = '"PingFang SC","Hiragino Sans GB","Heiti SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif';
+
+const pv = $("preview"), pctx = pv.getContext("2d");
+const off = document.createElement("canvas");
+let octx = off.getContext("2d", {willReadFrequently:true});
+
+/* 唯一的参数来源：初始默认值、「恢复推荐参数」按钮、存档清除都基于它 */
+const DEFAULTS = {
+  // 屏幕
+  pw:400, ph:300, rot:0,
+  // 分栏
+  cols:4, balance:true, cardborder:true, stretch:true,
+  gap:5, pad:6, inset:0.05, ipad:0.04,
+  // 标题条
+  title:"备货库存", tfs:38, tfw:500,
+  hdrfull:true, hdrstyle:"gray", hdrgray:0.5,
+  hdrline:false, hdrlinew:20,
+  // 卡片文字
+  cfs:18, ifs:13, lht:145, tgap:3,
+  autofit:true, nowrap:true, minfs:10, light:false,
+  // 数量列
+  numright:true,
+  // 二值化与导出
+  mode:"th", th:128, bpl:48
+};
+const P = Object.assign({}, DEFAULTS);
+let LAST = null;
+
+/* ---------------- 解析 ---------------- */
+// @分类 → 新分类；"名称 ×3" / "名称 x3" / "名称*3" → 带数量条目
+function parse(src){
+  const cats = []; let cur = null;
+  for(let raw of src.split(/\r?\n/)){
+    const line = raw.trim();
+    if(!line) continue;
+    let m = line.match(/^@\s*(.+)$/);
+    if(m){ cur = {title:m[1].trim(), items:[]}; cats.push(cur); continue; }
+    if(!cur){ cur = {title:"", items:[]}; cats.push(cur); }
+    const c = line.match(/^(.*?)[\s]*[x×*＊]\s*(\d+)\s*$/i);
+    if(c && c[1].trim()) cur.items.push({name:c[1].trim(), n:parseInt(c[2],10)});
+    else cur.items.push({name:line, n:1});
+  }
+  return cats.filter(c=>c.items.length || c.title);
+}
+
+/* ---------------- 文本换行（中文逐字断，西文按空格） ---------------- */
+function wrap(c, text, maxW){
+  if(c.measureText(text).width <= maxW) return [text];
+  const out = []; let line = "";
+  const tokens = [];
+  let buf = "";
+  for(const ch of text){
+    if(/[\u2E80-\u9FFF\u3000-\u303F\uFF00-\uFFEF]/.test(ch)){ if(buf){tokens.push(buf);buf="";} tokens.push(ch); }
+    else if(ch===" "){ if(buf){tokens.push(buf);buf="";} tokens.push(" "); }
+    else buf += ch;
+  }
+  if(buf) tokens.push(buf);
+
+  for(const t of tokens){
+    const cand = line + t;
+    if(c.measureText(cand).width > maxW && line){
+      out.push(line.replace(/\s+$/,"")); line = (t===" "?"":t);
+    } else line = cand;
+  }
+  if(line.trim()) out.push(line.replace(/\s+$/,""));
+  return out.length ? out : [text];
+}
+
+/* ---------------- 布局 ---------------- */
+function layout(design, cats){
+  const {W,H} = design;
+  const font = (s,w)=>`${w} ${s}px ${FONT}`;
+  const L = {warn:[]};
+
+  // 顶部标题条：灰底条高度取「字号所需高度」与「比例设定」的较大者，并保证装得下反白字
+  const wantH = Math.round(P.tfs * 2.05);                     // 字 + 上下留白
+  const hdrH = Math.max(Math.round(H * P.hdrlinew/100), wantH);
+  L.hdrH = hdrH;
+  L.bandInset = Math.round(W*0.03);
+
+  const top = hdrH + Math.round(H*0.012);
+  const pad = P.pad;
+  const gap = P.gap;
+  const cardW = Math.floor((W - pad*2 - gap*(P.cols-1)) / P.cols);
+  if(cardW < 12){ L.warn.push("栏数过多/间距太大，每栏不足 12px"); }
+  const cardH = H - top - pad;
+  const innerW = cardW - Math.round(cardW*P.inset);   // 卡片内缩
+  const ipad = Math.round(innerW*P.ipad);             // 文字左内边距
+
+  const iLineH = Math.round(P.ifs * P.lht/100);
+
+  const availW = innerW - 2*ipad;              // 卡片内可用文字宽度（各卡片相同）
+
+  // 分类名：所有卡片统一字号 —— 取「能让最长分类名单行放下」的值，大小才一致
+  const titleFloor = (ifs)=> Math.max(ifs + 3, Math.round(ifs*1.35));
+  const globalTitleSize = (ifs, cfs)=>{
+    const floorT = titleFloor(ifs);
+    let s = Math.max(cfs, floorT);
+    for(const cat of cats){
+      const t = cat.title || " ";
+      octx.font = font(s,700);
+      while(s > floorT && octx.measureText(t).width > availW) s--;
+    }
+    return s;
+  };
+
+  const measure = (cat, ifs, cfs, tSize)=>{
+    const lh = Math.round(ifs * P.lht/100);
+    const rawTitle = cat.title || " ";
+    octx.font = font(tSize,700);
+    const tLines = wrap(octx, rawTitle, availW);
+    const tLH = Math.round(tSize*1.28);
+
+    octx.font = font(ifs, P.light?400:700);
+    const lines=[]; let wrapped=0;
+    // 每行 = {name, cnt}，cnt 单独绘制时按卡片右缘右对齐（保留 ×）
+    const maxCnt = cat.items.reduce((a,it)=>Math.max(a, `×${it.n}`.length), 2);
+    const cw = P.numright ? octx.measureText("0".repeat(maxCnt)).width + ifs*0.14 : 0;
+    const nameW = Math.max(12, availW - cw);
+    for(const it of cat.items){
+      const wl = wrap(octx, it.name, nameW);        // 名称排版，末行留出 ×N 的位置
+      if(wl.length>1) wrapped++;
+      wl.forEach((l,i)=> lines.push({name: l, cnt: i === wl.length-1 ? `×${it.n}` : null}));
+    }
+    const padTop = Math.round(Math.max(cardW*0.06, tSize*0.20));   // 类目上移
+    const padBot = Math.round(Math.max(cardW*0.10, ifs*0.22));
+    const gapTI = Math.round(Math.max(lh*0.55, tSize*0.50)) + P.tgap;   // 类目与条目间距（可加）
+    const h = padTop + tLines.length*tLH + (cat.items.length?gapTI:0) + lines.length*lh + padBot;
+    return {title:rawTitle, tLines, lines, wrapped, h, tSize, tLH, padTop, padBot, ifs, cfs, lh, gapTI, availW};
+  };
+
+  let gT = globalTitleSize(P.ifs, P.cfs);
+  let m = cats.map(c=>measure(c, P.ifs, P.cfs, gT));
+
+  // ① 全局缩放：只动条目字号，分类名统一保持不变（保证层级与一致）。缩到下限就停，允许换行。
+  const floor = P.minfs;
+  for(let k=0;k<24;k++){
+    const okV = cats.every((c,i)=> m[i].h <= cardH);
+    const okH = !P.nowrap || cats.every((c,i)=> m[i].wrapped === 0);
+    if((!P.autofit) || (okV && okH)) break;
+    if(P.ifs<=floor) break;
+    P.ifs = Math.max(floor, P.ifs-1);
+    syncFontInputs();
+    gT = globalTitleSize(P.ifs, P.cfs);
+    m = cats.map(c=>measure(c, P.ifs, P.cfs, gT));
+  }
+  if(P.nowrap && cats.some((c,i)=>m[i].wrapped))
+    L.warn.push(`条目已缩到最小可读字号 ${floor}px，个别名称仍需换行 —— 可加宽屏幕 / 减栏数 / 缩短名称`);
+
+  // ② 逐卡兜底：仍然超高的那张卡单独再压自己的条目字号（分类名照旧统一大号），保证条目不丢
+  for(let i=0;i<m.length;i++){
+    let guard=0;
+    while(m[i].h > cardH && m[i].ifs > floor && guard++ < 20)
+      m[i] = measure(cats[i], m[i].ifs-1, P.cfs, gT);
+    if(m[i].h > cardH) L.trunc = (L.trunc||[]).concat(m[i].title);
+  }
+  L.titleSize = gT;
+
+  // 分栏
+  const buckets = Array.from({length:P.cols}, ()=>[]);
+  if(P.balance){
+    const fill = Array(P.cols).fill(0);
+    cats.forEach((c,i)=>{
+      let k = fill.indexOf(Math.min(...fill));
+      buckets[k].push({cat:c, m:m[i]});
+      fill[k] += m[i].h + gap;
+    });
+  } else {
+    cats.forEach((c,i)=>{ buckets[i] = [{cat:c, m:m[i]}]; });
+  }
+
+  L.buckets = buckets; L.cardW = cardW; L.cardH = cardH; L.colH = cardH; L.top = top; L.pad = pad;
+  L.gap = gap; L.innerW = innerW; L.ipad = ipad; L.iLineH = iLineH;
+  return L;
+}
+
+/* ---------------- 1bpp 抖动灰带 ---------------- */
+// PATTERN 是「每行」的位串字符串，循环使用；u = 行长
+const PATTERNS = {
+  "0.25": { u:4, rows:["1000","0000","0000","0000"] },   // 4×4 单元 1/16 ≈ 浅灰
+  "0.50": { u:2, rows:["10","01"] },                      // 2×2 棋盘 = 真 50%，视觉最均匀
+  "0.75": { u:4, rows:["1110","1110","1110","1110"] },   // 4×4 单元 12/16 = 75% 深灰
+  "0.875":{ u:2, rows:["11","11"] }                       // 直接 2×2 全涂 ≈ 接近实心
+};
+function ditherBand(x, y, w, h, level){
+  if(level <= 0) return;
+  octx.fillStyle = "#000";
+  if(level >= 1){ octx.fillRect(x,y,w,h); return; }
+  const keys = Object.keys(PATTERNS);
+  const key = keys.reduce((a,k)=> Math.abs(+k-level) < Math.abs(+a-level) ? k : a, "0.50");
+  const P = PATTERNS[key];
+  const x0 = Math.max(0, x|0), y0 = Math.max(0, y|0);
+  const x1 = Math.min(off.width, (x+w)|0), y1 = Math.min(off.height, (y+h)|0);
+  const n = P.rows.length;
+  for(let py=y0; py<y1; py++){
+    const row = P.rows[py % n];
+    for(let px=x0; px<x1; px++)
+      if(row[px % P.u] === "1") octx.fillRect(px, py, 1, 1);
+  }
+}
+
+/* ---------------- 绘制 ---------------- */
+function draw(){
+  const {W,H} = designSize();
+  const cats = parse($("src").value);
+  const L = layout({W,H}, cats);
+
+  octx = off.getContext("2d",{willReadFrequently:true});
+  off.width = W; off.height = H;
+  octx.fillStyle = "#fff"; octx.fillRect(0,0,W,H);   // 墨水屏底色 = 白
+  octx.textBaseline = "alphabetic";
+  const font = (s,w)=>`${w} ${s}px ${FONT}`;
+
+  /* --- 标题条：网点灰底 + 反白字 --- */
+  const bi = P.hdrfull ? 0 : L.bandInset;     // 满幅：灰底一直延伸到屏幕左右边缘
+  const bandW = W - bi*2;
+
+  const tPad = Math.round(W*0.035);
+  const tLH2 = Math.round(P.tfs*1.22);
+  const rawTitle = $("title").value || " ";
+  octx.font = font(P.tfs, P.tfw);
+  let tl = wrap(octx, rawTitle, bandW - tPad*2);
+  // 标题换行会糊：能单行就单行（下限 18px）
+  if(tl.length > 1){
+    let s = P.tfs;
+    while(tl.length > 1 && s > 18){
+      s -= 1;
+      octx.font = font(s, P.tfw);
+      tl = wrap(octx, rawTitle, bandW - tPad*2);
+    }
+  }
+  const bandInner = P.hdrfull ? L.hdrH
+                             : Math.max(Math.round(P.tfs*1.42), Math.round(L.hdrH*0.92));
+  const bandY = P.hdrfull ? 0 : Math.round((L.hdrH - bandInner)/2);
+
+  // 垂直居中：用实际字形墨迹盒（ascent/descent）算，而不是猜 0.78em
+  const tm = octx.measureText(tl[0]);
+  const inkA = tm.actualBoundingBoxAscent  || P.tfs*0.88;
+  const inkD = tm.actualBoundingBoxDescent || P.tfs*0.12;
+  const inkH = inkA + inkD;
+  const blockH = inkH + (tl.length-1)*tLH2;
+  let ty = Math.round(bandY + (bandInner - blockH)/2 + inkA);
+  const titleXY = tl.map(l=>{
+    const tw = octx.measureText(l).width;
+    const r = { x: Math.round((W-tw)/2), y: ty, t: l };   // 水平居中 + 垂直居中
+    ty += tLH2; return r;
+  });
+
+  if(P.hdrstyle !== "none" && bandInner > 2){
+    if(P.hdrstyle === "solid"){ octx.fillStyle = "#000"; octx.fillRect(bi,bandY,bandW,bandInner); }
+    else ditherBand(bi, bandY, bandW, bandInner, P.hdrgray);
+
+    /* 反白字的正确做法：先做"掩膜"再挖网点。
+       直接把字填白时，2×2 网点会从笔画缝里透进来，字就糊了。
+       这里把字形用描边向外撑厚 1~2px 作为掩膜，掩膜内整片填白 → 笔画实心、彼此分开。 */
+    const mk = document.createElement("canvas");
+    mk.width = W; mk.height = H;
+    const mc = mk.getContext("2d", {willReadFrequently:true});
+    mc.fillStyle = "#000"; mc.strokeStyle = "#000";
+    mc.lineJoin = "round"; mc.lineCap = "round";
+    mc.font = font(P.tfs, P.tfw);
+    // 掩膜 = 原始字形（可调字重）+ 1px 描边补网点缝
+    mc.lineWidth = 1;
+    titleXY.forEach(r=> mc.fillText(r.t, r.x, r.y));
+    titleXY.forEach(r=> mc.strokeText(r.t, r.x, r.y));
+    const md = mc.getImageData(0,0,W,H).data;
+    const od = octx.getImageData(0,0,W,H);
+    const od_ = od.data;
+    for(let y=Math.max(0,bandY); y<Math.min(H, bandY+bandInner); y++){
+      for(let x=bi; x<bi+bandW; x++){
+        if(x<0||x>=W) continue;
+        if(md[(y*W+x)*4+3] >= 110){ const o=(y*W+x)*4; od_[o]=255; od_[o+1]=255; od_[o+2]=255; }
+      }
+    }
+    octx.putImageData(od, 0, 0);
+  } else {
+    octx.fillStyle = "#000";
+    titleXY.forEach(r=> octx.fillText(r.t, r.x, r.y));
+  }
+  if(P.hdrline){
+    octx.fillStyle = "#000";
+    octx.fillRect(0, L.hdrH, W, Math.max(1, Math.round(H*0.004)));
+  }
+
+  /* --- 卡片 --- */
+  octx.fillStyle = "#000"; octx.strokeStyle = "#000";
+  L.buckets.forEach((bucket,k)=>{
+    const x = L.pad + k*(L.cardW + L.gap);
+    let y = L.top;
+    bucket.forEach(({cat, m:mm}, idx)=>{
+      const n = bucket.length;
+      const cardH = P.stretch
+        ? (L.colH - L.gap*(n-1)) / n
+        : Math.min(mm.h, L.colH);
+      if(P.cardborder){
+        octx.lineWidth = Math.max(1, Math.round(W*0.0022));
+        rr(x, y, L.cardW, cardH, Math.round(Math.min(L.cardW,cardH)*0.05));
+        octx.stroke();
+      }
+      let cy = y + mm.padTop + mm.tSize;
+      octx.font = font(mm.tSize,700);
+      mm.tLines.forEach(l=>{ octx.fillText(l, x+L.ipad, cy); cy += mm.tLH; });
+      cy = y + mm.padTop + mm.tLines.length*mm.tLH + mm.gapTI;
+      octx.font = font(mm.ifs, P.light?400:700);
+      let clipped = false;
+      const rightX = x + L.cardW - L.ipad;
+      for(const line of mm.lines){
+        if(cy > y + cardH - Math.round(mm.ifs*0.30)){ clipped = true; break; }
+        octx.fillText(line.name, x+L.ipad, cy);
+        if(line.cnt){
+          // 数量靠卡片右缘右对齐（保留 ×）
+          const cw2 = octx.measureText(line.cnt).width;
+          octx.fillText(line.cnt, Math.round(rightX - cw2), cy);
+        }
+        cy += mm.lh;
+      }
+      if(clipped) L.warn.push(`「${mm.title}」内容超出可用高度，已省略末尾条目`);
+      y += cardH + L.gap;
+    });
+  });
+
+  /* --- 旋转到物理朝向 --- */
+  const phys = rotate(off, P.rot);
+  const img = octx.getImageData(0,0,phys.width,phys.height);
+  const bits = binarise(img);
+  LAST = {w:phys.width, h:phys.height, bits, src:phys};
+  paint(bits, phys);
+  $("hexout").value = fwText(bits, phys.width, phys.height);
+  updateMeta(cats, L, phys, bits);
+}
+
+function rr(x,y,w,h,r){
+  octx.beginPath();
+  octx.moveTo(x+r,y); octx.lineTo(x+w-r,y); octx.quadraticCurveTo(x+w,y,x+w,y+r);
+  octx.lineTo(x+w,y+h-r); octx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  octx.lineTo(x+r,y+h); octx.quadraticCurveTo(x,y+h,x,y+h-r);
+  octx.lineTo(x,y+r); octx.quadraticCurveTo(x,y,x+r,y);
+  octx.closePath();
+}
+
+function designSize(){
+  const r = P.rot;
+  return (r===90||r===270) ? {W:P.ph, H:P.pw} : {W:P.pw, H:P.ph};
+}
+function rotate(src, deg){
+  if(!deg) return src;
+  const c = document.createElement("canvas");
+  const swap = (deg===90||deg===270);
+  c.width  = swap ? src.height  : src.width;
+  c.height = swap ? src.width   : src.height;
+  const x = c.getContext("2d");
+  x.translate(c.width/2, c.height/2);
+  x.rotate(deg*Math.PI/180);
+  x.drawImage(src, -src.width/2, -src.height/2);
+  return c;
+}
+
+/* ---------------- 二值化 ---------------- */
+function binarise(img){
+  const {width:w,height:h,data:d} = img;
+  const o = new Uint8Array(w*h);
+  if(P.mode==="fs"){
+    const g = new Float32Array(w*h);
+    for(let i=0;i<w*h;i++) g[i] = 0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2];
+    for(let y=0;y<h;y++){
+      const rev = (y&1)===1;
+      for(let k=0;k<w;k++){
+        const x = rev?w-1-k:k, i=y*w+x, old=g[i], nw = old < P.th ? 1 : 0;
+        o[i]=nw; const err = old-(nw?0:255); if(!err) continue;
+        const put=(xx,yy,f)=>{ if(xx<0||xx>=w||yy<0||yy>=h) return; g[yy*w+xx]+=err*f; };
+        if(rev){put(x-1,y,7/16);put(x+1,y,3/16);put(x,y+1,5/16);put(x-1,y+1,1/16);}
+        else   {put(x+1,y,7/16);put(x-1,y,3/16);put(x,y+1,5/16);put(x+1,y+1,1/16);}
+      }
+    }
+  } else {
+    for(let i=0;i<w*h;i++) o[i] = (0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2]) < P.th ? 1 : 0;
+  }
+  return o;
+}
+
+function paint(bits, src){
+  const w=src.width,h=src.height;
+  const tmp=document.createElement("canvas"); tmp.width=w;tmp.height=h;
+  const tc=tmp.getContext("2d"); const id=tc.createImageData(w,h);
+  for(let i=0;i<w*h;i++){ const v=bits[i]?0:255; id.data[i*4]=id.data[i*4+1]=id.data[i*4+2]=v; id.data[i*4+3]=255; }
+  tc.putImageData(id,0,0);
+  const zoom = Math.max(2, Math.min(8, Math.floor(700/Math.max(w,h))));
+  pv.width=w*zoom; pv.height=h*zoom;
+  pctx.imageSmoothingEnabled=false;
+  pctx.drawImage(tmp,0,0,pv.width,pv.height);
+}
+
+/* ---------------- 帧缓冲 ---------------- */
+function pack(bits,w,h){
+  const stride = Math.ceil(w/8);
+  const buf = new Uint8Array(stride*h);
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++)
+    if(bits[y*w+x]) buf[y*stride+(x>>3)] |= 0x80>>(x&7);
+  return buf;
+}
+function fwText(bits,w,h){
+  const buf = pack(bits,w,h), out=[];
+  for(let off=0; off<buf.length; off+=P.bpl){
+    let hex="";
+    for(let i=off;i<Math.min(off+P.bpl,buf.length);i++) hex+=buf[i].toString(16).padStart(2,"0");
+    out.push(`FW:${off.toString(16).padStart(4,"0")}:${hex}`);
+  }
+  out.push("FAPPLY");
+  return out.join("\n");
+}
+
+function updateMeta(cats,L,phys,bits){
+  const w=phys.width,h=phys.height, stride=Math.ceil(w/8);
+  const ink = bits.reduce((a,b)=>a+b,0);
+  let s = `物理 ${w}×${h}px  ·  ${P.cols} 栏  ·  1bpp  ·  帧缓冲 ${stride*h} 字节`;
+  s += `\n${cats.length} 个分类 · ${cats.reduce((a,c)=>a+c.items.length,0)} 个条目 · 墨水覆盖率 ${(100*ink/bits.length).toFixed(1)}%`;
+  const warn = [...new Set(L.warn)];
+  if(warn.length) s += "\n⚠ " + warn.join("\n⚠ ");
+  if(P.stretch) s += "\n（卡片已撑满整栏高度，未填满的部分是留白，不是漏排）";
+  $("meta").textContent = s;
+  $("meta").className = L.warn.length ? "meta warn" : "meta";
+}
+
+/* ---------------- 导出 ---------------- */
+function download(name,url){ const a=document.createElement("a"); a.href=url; a.download=name; a.click(); }
+$("dlpng").onclick = ()=>{
+  if(!LAST) return;
+  LAST.src.toBlob(b=>download(`eink-${LAST.w}x${LAST.h}.png`, URL.createObjectURL(b)),"image/png");
+};
+$("cphex").onclick = async ()=>{
+  const t=$("hexout").value;
+  try{ await navigator.clipboard.writeText(t); $("cphex").textContent="已复制 ✓"; }
+  catch(e){ $("hexout").select(); document.execCommand("copy"); $("cphex").textContent="已复制 ✓"; }
+  setTimeout(()=>$("cphex").textContent="复制帧缓冲",1300);
+};
+$("dlhex").onclick = ()=>{
+  const b=new Blob([$("hexout").value+"\n"],{type:"text/plain"});
+  download(`eink-${LAST.w}x${LAST.h}-fw.txt`,URL.createObjectURL(b));
+};
+
+/* ---------------- 交互 ----------------
+   排版参数全部锁死在 DEFAULTS，界面上不再暴露；
+   用户可改的只有：标题文字、标题背景色样式/深浅、清单内容。 */
+function syncFontInputs(){ /* 字号由自动适配内部调整，无需回写界面 */ }
+function readAll(){
+  Object.assign(P, DEFAULTS);                    // 先复位，保证锁定项不被存档污染
+  P.title    = $("title").value;
+  P.hdrstyle = $("hdrstyle").value;
+  P.hdrgray  = Math.round(+$("hdrgray").value) / 100;
+  $("hdrgrayv").textContent = Math.round(P.hdrgray*100) + "%";
+}
+function fillInputs(){
+  $("title").value    = P.title;
+  $("hdrstyle").value = P.hdrstyle;
+  $("hdrgray").value  = Math.round(P.hdrgray*100);
+  $("hdrgrayv").textContent = Math.round(P.hdrgray*100) + "%";
+}
+
+const SAMPLE = [
+"@洗护清洁",
+"手洗洗衣液 ×2",
+"厕所香氛 ×3",
+"力士沐浴露替换装 ×1",
+"灭菌液替换装 ×1",
+"消毒酒精 ×1",
+"漂白液 ×1",
+"84消毒液 ×1",
+"",
+"@身体洗护",
+"多芬沐浴露 ×1",
+"洗手液 ×1",
+"宠物沐浴露 ×1",
+"小瓶沐浴露 ×3",
+"润发乳替换装 ×2",
+"护发素 ×7",
+"",
+"@面部护理",
+"眼唇卸妆液 ×1",
+"小瓶卸妆水 ×1",
+"洗面奶 ×3",
+"男士洗面奶 ×1",
+"泡沫洗面奶替换装 ×2",
+"化妆刷洗刷剂 ×1",
+"粉扑洗剂 ×1",
+"清洁面膜 ×1",
+"小瓶漱口水 ×1",
+"",
+"@口腔&造型",
+"牙膏 ×5",
+"小支牙膏 ×4",
+"发蜡 ×1",
+"湿发膏 ×2",
+"啫喱膏 ×1",
+"定型喷雾 ×1"
+].join("\n");
+
+// 一键回到默认排版（保留清单内容）
+$("resetgeom") && ($("resetgeom").onclick = ()=>{
+  const src = $("src").value;
+  Object.assign(P, DEFAULTS);
+  $("src").value = src;
+  fillInputs(); readAll(); draw(); save();
+});
+
+let tm=null;
+function run(){ clearTimeout(tm); tm=setTimeout(()=>{ try{ draw(); }catch(e){ $("meta").textContent="错误: "+e.message; $("meta").className="meta warn"; } }, 60); }
+const STORE = "eink-inv/v12";    // 参数结构变过就升版本号，旧存档不再覆盖锁定项
+function save(){ try{ localStorage.setItem(STORE, JSON.stringify({src:$("src").value, title:P.title, hdrstyle:P.hdrstyle, hdrgray:P.hdrgray})); }catch(e){} }
+function load(){
+  try{ const r=localStorage.getItem(STORE); if(!r) return false;
+    const s=JSON.parse(r);
+    if(s.src) $("src").value=s.src;
+    if(s.title) P.title=s.title;
+    if(s.hdrstyle) P.hdrstyle=s.hdrstyle;
+    if(typeof s.hdrgray==="number") P.hdrgray=s.hdrgray;
+    return true;
+  }catch(e){ return false; }
+}
+
+["title","hdrstyle","hdrgray","src"].forEach(id=>{
+  $(id).addEventListener("input", ()=>{
+    readAll();
+    clearTimeout(tm);
+    tm=setTimeout(()=>{ draw(); save(); }, id==="src" ? 120 : 60);
+  });
+});
+
+if(!load()) $("src").value = SAMPLE;
+fillInputs(); readAll(); draw();
+window.__draw = draw; window.__P = P; window.__last = ()=>LAST;
+window.__DEFAULTS = DEFAULTS;
+</script>
+</body>
+</html>
