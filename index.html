@@ -42,7 +42,36 @@
   .meta.warn{color:var(--warn,#ffb454)}
   details{margin-top:8px}summary{font-size:12px;color:var(--dim);cursor:pointer}
   textarea.hex{font-size:11px;min-height:120px}
-  .presets{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+
+  /* ---- 快速编辑 ---- */
+  .addrow{display:flex;gap:7px;margin-top:4px}
+  .addrow input{flex:1;min-width:0}
+  .addrow button{flex:none;padding:8px 16px}
+  .verdict{margin-top:9px;padding:9px 10px;border-radius:8px;background:#0c0e13;
+    border:1px solid var(--line);font-size:12.5px;line-height:1.6}
+  .verdict b{color:var(--acc)}
+  .verdict .undo{color:var(--warn);cursor:pointer;text-decoration:underline}
+  #matches{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  #matches:empty{margin-top:0}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border-radius:999px;
+    background:#1b1f28;border:1px solid var(--line);font-size:12.5px;cursor:pointer;
+    min-height:36px;user-select:none}
+  .chip:hover{background:#242a35}
+  .chip .who{color:var(--dim);font-size:11px}
+  .chip .n{font-variant-numeric:tabular-nums;color:var(--acc)}
+  .cat{border:1px solid var(--line);border-radius:9px;margin-bottom:9px;overflow:hidden}
+  .cat>h4{margin:0;padding:8px 10px;font-size:13px;font-weight:600;background:#131720;
+    display:flex;justify-content:space-between;align-items:center}
+  .cat>h4 span{font-size:11px;color:var(--dim);font-weight:400}
+  .row-item{display:flex;align-items:center;gap:6px;padding:6px 8px 6px 10px;
+    border-top:1px solid #1c2029;min-height:42px}
+  .row-item .nm{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stepper{display:flex;align-items:center;gap:0;flex:none}
+  .stepper button{width:34px;height:34px;padding:0;border-radius:7px;font-size:16px;line-height:1}
+  .stepper .n{min-width:30px;text-align:center;font-size:13px;font-variant-numeric:tabular-nums}
+  .del{flex:none;width:34px;height:34px;padding:0;border-radius:7px;color:#ff7b7b;font-size:15px}
+  .empty{font-size:12px;color:var(--dim);padding:9px 10px}
+
   .presets button{padding:4px 8px;font-size:11px}
   .presets button.on{background:var(--acc);border-color:var(--acc);color:#07101f}
 </style>
@@ -72,11 +101,53 @@
   </fieldset>
 
   <fieldset>
-    <legend>清单内容</legend>
-    <textarea id="src" spellcheck="false"></textarea>
+    <legend>快速增 / 减</legend>
+    <div class="addrow">
+      <input type="text" id="quick" placeholder="增加：输入物品名" autocomplete="off" enterkeyhint="done">
+      <button class="pri" id="addbtn">添加</button>
+    </div>
+    <div id="verdict" class="verdict" hidden></div>
+
+    <div class="addrow" style="margin-top:8px">
+      <input type="text" id="quickdel" placeholder="减少：输入已有物品名" autocomplete="off" enterkeyhint="done">
+      <button id="delbtn">减少</button>
+    </div>
+    <div id="matches"></div>
     <div class="hint">
-      <code>@分类名</code> 开始一个新分类，下面是条目；<code>名称 ×3</code> 表示还剩 3 个，不写数量默认 ×1。<br>
-      排版参数已固定为调好的方案（400×300 · 四栏 · 分类名大、条目小），无需再调。
+      <b>增加</b>：只输名称，工具按关键词自动判断归到哪个栏目，数量默认 ×1。<br>
+      <b>减少</b>：输入后下方列出清单里匹配的物品，点一下就减 1；减到 0 自动移出清单。<br>
+      想指定栏目：<code>面部护理 眼霜</code>；想直接给数量：<code>洗发水 2</code>。
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>清单</legend>
+    <div id="cats"></div>
+    <details>
+      <summary>文本模式（高级）</summary>
+      <textarea id="src" spellcheck="false"></textarea>
+      <div class="hint"><code>@分类名</code> 开始新分类；<code>名称 ×3</code> 表示还剩 3 个。</div>
+    </details>
+  </fieldset>
+
+
+  <fieldset>
+    <legend>推送到墨水屏</legend>
+    <div id="blebox">
+      <div class="addrow">
+        <button class="pri" id="blebtn">连接设备</button>
+        <button id="bledis">断开</button>
+      </div>
+      <div id="bleinfo" class="verdict" hidden></div>
+      <div class="btns">
+        <button class="pri" id="pushbtn" disabled>推送到墨水屏</button>
+      </div>
+      <div id="pushprog" class="meta" style="text-align:left;white-space:pre-wrap"></div>
+    </div>
+    <div class="hint">
+      协议来自固件 <code>tsl0922/EPD-nRF5</code>：服务 <code>62750001-…</code>、写特征 <code>62750002-…</code>。<br>
+      流程：<code>INIT → WRITE_IMG 分片 → REFRESH</code>。需在 HTTPS 下用 Bluefy 打开（本页面已满足）。<br>
+      <b>推送前请先把墨水屏设为「照片/图片模式」，否则日历界面会覆盖掉你推的图。</b>
     </div>
   </fieldset>
 
@@ -171,6 +242,204 @@ function wrap(c, text, maxW){
   if(line.trim()) out.push(line.replace(/\s+$/,""));
   return out.length ? out : [text];
 }
+
+/* ---------------- 自动归类 ----------------
+   纯本地关键词匹配，不需要联网也不需要 API key。
+   命中关键词越长分数越高；分数相同按栏目在清单里的先后顺序。
+   都不命中时退回「通用启发式」，再不中就交给用户选。 */
+const KEYWORDS = {
+  "洗护清洁": ["洗衣液","洗衣","衣物","柔顺剂","漂洗","去渍","除螨",
+              "厕所","马桶","洁厕","浴室清洁","香氛","除臭","消毒","灭菌","酒精",
+              "漂白","84","洗洁精","洗碗","厨房","油污","地板","拖地","清洁剂","洗手液",
+              "砂纸","钢丝球","百洁布","抹布","海绵","清洁刷"],
+  "身体洗护": ["沐浴","洗澡","沐浴球","沐浴泡","泡沫浴","香皂","洗手液",
+              "洗发","护发","润发","发乳","身体乳","润肤","止汗","腋下",
+              "搓澡","磨砂","足部","洗脚","护手霜","护手","护足","身体"],
+  "面部护理": ["面膜","洗面奶","洁面","卸妆","爽肤水","柔肤水",
+              "精华","化妆水","乳液","面霜","眼霜","防晒","护肤","粉扑","化妆刷","睫毛",
+              "黑头","痘痘","痤疮","水乳","气泡","清洁泥","撕拉","唇膏","口红","香水",
+              "剃须","须刀","剃"],
+  "口腔&造型": ["牙膏","牙刷","牙线","牙签","漱口水","牙粉","洁牙","牙膜","口香糖",
+              "发蜡","发胶","定型","啫喱","摩丝","发膜","发油","造型","梳子","卷发","蓬松粉"]
+};
+// 通用启发式：关键词表没覆盖到的新词也能大致归位
+const HEURISTICS = [
+  { re:/牙|口腔|漱口/,                 score:6 },
+  { re:/清洁|消毒|漂白|84|洗衣|衣物|厨房|马桶|厕所/, score:6 },
+  { re:/洗发|护发|润发|沐浴|身体|香皂|止汗/,     score:5 },
+  { re:/发蜡|发胶|定型|造型|梳/,               score:5 },
+  { re:/面|妆|肤|精华|面膜|水乳/,             score:5 }
+];
+
+function classify(text, cats){
+  const t = text.trim();
+  // 1) 显式指定：「@栏目 名称」或「栏目 名称」
+  for(const c of cats){
+    for(const p of ["@"+c.title, c.title]){
+      if(t.startsWith(p)){
+        const rest = t.slice(p.length).replace(/^[\s:：]+/,"");
+        if(rest) return {cat:c.title, name:rest, forced:true};
+      }
+    }
+  }
+  const name = t.replace(/[\s]+(\d+)\s*$/, (_,d)=>"").trim() || t;
+
+  // 2) 关键词表打分
+  let best = null;
+  for(const c of cats){
+    let s = 0, hits = [];
+    for(const kw of (KEYWORDS[c.title] || [])){
+      if(kw && name.includes(kw)){ s += kw.length * 2; hits.push(kw); }
+    }
+    if(s && (!best || s > best.score)) best = {cat:c.title, score:s, hits};
+  }
+  // 3) 启发式兜底
+  if(!best){
+    for(const c of cats){
+      let s = 0, hits = [];
+      for(const h of HEURISTICS){
+        if(h.re.test(name)){ s = Math.max(s, h.score); hits.push("字面匹配"); }
+      }
+      if(s && (!best || s > best.score)) best = {cat:c.title, score:s, hits};
+    }
+  }
+  return best ? {cat:best.cat, name, score:best.score, hits:best.hits} : {cat:null, name};
+}
+
+/* ---------------- 清单编辑 ---------------- */
+function getCats(){ return parse($("src").value); }
+function setCats(cats){
+  $("src").value = cats.map(c=>
+    ["@"+c.title].concat(c.items.map(it=>`${it.name} ×${it.n}`)).join("\n")
+  ).join("\n\n");
+  onDataChanged();
+}
+function onDataChanged(){ clearTimeout(tm); tm = setTimeout(()=>{ draw(); save(); renderCats(); }, 40); }
+
+function addItem(catTitle, name, n){
+  const cats = getCats();
+  const c = cats.find(x=>x.title === catTitle);
+  if(!c) return false;
+  const dup = c.items.find(it=>it.name === name);
+  if(dup) dup.n = n != null ? n : dup.n + 1;   // 同名再加 = 数量累加
+  else c.items.push({name, n: n != null ? n : 1});
+  setCats(cats);
+  return true;
+}
+
+/* 在全部栏目里找匹配的物品：完全相同 > 开头相同 > 包含；名称长的优先（更具体） */
+function findMatches(q, cats){
+  const t = q.trim();
+  if(!t) return [];
+  const out = [];
+  for(const c of cats){
+    c.items.forEach((it, i)=>{
+      const nm = it.name.toLowerCase(), s = t.toLowerCase();
+      let rank = 0;
+      if(nm === s) rank = 3;
+      else if(nm.startsWith(s)) rank = 2;
+      else if(nm.includes(s)) rank = 1;
+      else if(s.includes(nm)) rank = 1;
+      if(rank) out.push({cat:c.title, idx:i, name:it.name, n:it.n||1, rank});
+    });
+  }
+  out.sort((a,b)=> b.rank - a.rank || b.name.length - a.name.length);
+  return out.slice(0, 12);
+}
+
+function renderMatches(){
+  const box = $("matches");
+  const q = $("quickdel").value;
+  const hits = findMatches(q, getCats());
+  box.innerHTML = "";
+  for(const h of hits){
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.innerHTML = `<span>${esc(h.name)}</span><span class="n">×${h.n}</span><span class="who">${esc(h.cat)}</span>`;
+    b.onclick = ()=>{
+      const r = bumpCount(h.cat, h.idx, -1);
+      if(r === "floor") flashVerdict(`「${h.name}」已经是 ×1 了。要从清单移除请在清单里点 ✕。`);
+      renderMatches();
+    };
+    box.appendChild(b);
+  }
+  if(q.trim() && !hits.length){
+    const s = document.createElement("div");
+    s.className = "empty"; s.textContent = `清单里没有匹配「${q.trim()}」的物品`;
+    box.appendChild(s);
+  }
+}
+function bumpCount(catTitle, idx, delta){
+  const cats = getCats();
+  const c = cats.find(x=>x.title === catTitle);
+  if(!c || !c.items[idx]) return "none";
+  const cur = c.items[idx].n || 1;
+  if(delta < 0 && cur <= 1) return "floor";      // 到 1 为止，不自动删除；删除请点 ✕
+  c.items[idx].n = Math.max(1, cur + delta);
+  setCats(cats);
+  return c.items[idx].n;
+}
+function removeItem(catTitle, idx){
+  const cats = getCats();
+  const c = cats.find(x=>x.title === catTitle);
+  if(!c) return;
+  c.items.splice(idx,1);
+  setCats(cats);
+}
+function moveItem(from, idx, to){
+  const cats = getCats();
+  const a = cats.find(x=>x.title===from), b = cats.find(x=>x.title===to);
+  if(!a || !b || from===to) return;
+  b.items.push(a.items.splice(idx,1)[0]);
+  setCats(cats);
+}
+
+function renderCats(){
+  const cats = getCats();
+  const box = $("cats");
+  box.innerHTML = "";
+  if(!cats.length){ box.innerHTML = '<div class="empty">清单是空的，用上面的输入框添加物品。</div>'; return; }
+  for(const c of cats){
+    const d = document.createElement("div"); d.className = "cat";
+    const h = document.createElement("h4");
+    h.innerHTML = `<span style="color:#e6e8ee">${esc(c.title)}</span><span>${c.items.length} 项</span>`;
+    d.appendChild(h);
+    if(!c.items.length) d.appendChild(Object.assign(document.createElement("div"),
+      {className:"empty", textContent:"（空）"}));
+    c.items.forEach((it, i)=>{
+      const r = document.createElement("div"); r.className = "row-item";
+      const nm = document.createElement("div"); nm.className = "nm"; nm.textContent = it.name;
+
+      const st = document.createElement("div"); st.className = "stepper";
+      const minus = document.createElement("button"); minus.textContent = "−";
+      minus.title = "减少（最少 1，删除请点 ✕）";
+      minus.onclick = ()=>{ const r = bumpCount(c.title, i, -1);
+        if(r === "floor") flashVerdict(`「${it.name}」已经是 ×1 了。要从清单移除请点右侧 ✕。`); };
+      const num = document.createElement("span"); num.className = "n"; num.textContent = "×"+(it.n||1);
+      const plus = document.createElement("button"); plus.textContent = "+";
+      plus.title = "增加"; plus.onclick = ()=>bumpCount(c.title, i, +1);
+      st.append(minus, num, plus);
+
+      const del = document.createElement("button"); del.className = "del"; del.textContent = "✕";
+      del.title = "删除"; del.onclick = ()=>removeItem(c.title, i);
+
+      r.append(nm, st, del);
+      nm.onclick = ()=>cycleCat(c.title, i);       // 点名称可换栏目
+      nm.title = "点击可换到其他栏目";
+      d.appendChild(r);
+    });
+    box.appendChild(d);
+  }
+}
+let cyc = 0;
+function cycleCat(from, idx){
+  const cats = getCats();
+  if(cats.length < 2) return;
+  cyc = (cyc+1) % (cats.length-1);
+  const others = cats.filter(c=>c.title !== from);
+  moveItem(from, idx, others[cyc].title);
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
 /* ---------------- 布局 ---------------- */
 function layout(design, cats){
@@ -623,18 +892,215 @@ function load(){
   }catch(e){ return false; }
 }
 
+function flashVerdict(html){
+  const v = $("verdict");
+  v.hidden = false;
+  v.innerHTML = html;
+}
+
+/* 认不出归类时，直接弹出所有栏目让用户点一下 */
+function askCategory(cats, name, n){
+  const v = $("verdict");
+  v.hidden = false;
+  v.innerHTML = `<div style="margin-bottom:8px">认不出「<b>${esc(name)}</b>」该归哪一栏，点一下：</div>`;
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex;flex-wrap:wrap;gap:6px";
+  for(const c of cats){
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.innerHTML = `<b style="color:#e6e8ee">${esc(c.title)}</b><span class="who">${c.items.length} 项</span>`;
+    b.onclick = ()=>{
+      const qty = n != null ? n : 1;
+      addItem(c.title, name, n);
+      $("quick").value = "";
+      flashVerdict(`已添加 <b>${esc(name)} ×${qty}</b> 到「<b>${esc(c.title)}</b>」`);
+    };
+    row.appendChild(b);
+  }
+  v.appendChild(row);
+}
+
+/* ================= 墨水屏推送（tsl0922/EPD-nRF5 协议） =================
+   Service      62750001-d828-918d-fb46-b6c11c675aec
+   Write  char  62750002-d828-918d-fb46-b6c11c675aec
+   指令: INIT 0x01 / WRITE_IMG 0x30 / REFRESH 0x05
+   帧: [指令码, 载荷…]，载荷首字节 = (bw?0x00:0x01) | (首片?0x02:0) | (rle?0x04:0)  */
+const EPD = {
+  svc:    "62750001-d828-918d-fb46-b6c11c675aec",
+  write:  "62750002-d828-918d-fb46-b6c11c675aec",
+  verChr: "62750003-d828-918d-fb46-b6c11c675aec",
+  CMD: { INIT:0x01, WRITE_IMG:0x30, REFRESH:0x05 },
+  dev:null, chr:null, mtu:20, rle:false, connected:false
+};
+
+async function bleConnect(){
+  const box = $("bleinfo");
+  if(!navigator.bluetooth){ box.hidden=false; box.textContent="这个浏览器不支持 Web Bluetooth。请用 Bluefy（iOS）或 Chrome/Edge。"; return; }
+  try{
+    box.hidden=false; box.textContent="正在搜索设备…";
+    EPD.dev = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "NRF_EPD" }],
+      optionalServices: [EPD.svc]
+    });
+  }catch(e){
+    box.textContent = "未连接：" + (e && e.message ? e.message : e);
+    return;
+  }
+  try{
+    const server = await EPD.dev.gatt.connect();
+    const svc = await server.getPrimaryService(EPD.svc);
+    EPD.chr = await svc.getCharacteristic(EPD.write);
+    EPD.connected = true;
+
+    let ver = "未知";
+    try{
+      const v = await (await svc.getCharacteristic(EPD.verChr)).readValue();
+      ver = "0x" + new Uint8Array(v.buffer)[0].toString(16);
+    }catch(e){}
+
+    // 订阅通知：设备会告知 MTU 与是否支持 RLE
+    try{
+      await EPD.chr.startNotifications();
+      EPD.chr.addEventListener("characteristicvaluechanged", ev=>{
+        const msg = new TextDecoder().decode(ev.target.value);
+        if(msg.indexOf("mtu=") === 0){
+          const n = parseInt(msg.substring(4),10);
+          if(n > 0) EPD.mtu = n;
+        }
+        if(msg.indexOf("rle=1") >= 0) EPD.rle = true;
+      });
+    }catch(e){}
+
+    box.innerHTML = `已连接 <b>${esc(EPD.dev.name || "")}</b> · 固件 ${ver} · MTU ${EPD.mtu}`;
+    $("blebtn").textContent = "重新连接";
+    $("pushbtn").disabled = false;
+  }catch(e){
+    box.textContent = "连接失败：" + (e && e.message ? e.message : e);
+  }
+}
+
+function bleDisconnect(){
+  try{ if(EPD.dev && EPD.dev.gatt.connected) EPD.dev.gatt.disconnect(); }catch(e){}
+  EPD.connected = false; EPD.chr = null;
+  $("pushbtn").disabled = true;
+  $("blebtn").textContent = "连接设备";
+  const box = $("bleinfo"); box.hidden = false; box.textContent = "已断开。";
+}
+
+async function epdWrite(cmd, payload){
+  const buf = payload ? new Uint8Array([cmd, ...payload]) : new Uint8Array([cmd]);
+  // 优先无响应写（快），失败再退回有响应写（保证不丢）
+  try{ await EPD.chr.writeValueWithoutResponse(buf); }
+  catch(e){ await EPD.chr.writeValueWithResponse(buf); }
+}
+
+async function pushToEPD(){
+  if(!EPD.chr){ alert("请先点「连接设备」"); return; }
+  if(!LAST){ draw(); }
+  const btn = $("pushbtn"), prog = $("pushprog");
+  btn.disabled = true;
+  try{
+    const {w, h, bits} = LAST;
+    const stride = Math.ceil(w/8);
+    const raw = new Uint8Array(stride*h);
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++)
+      if(bits[y*w+x]) raw[y*stride+(x>>3)] |= 0x80 >> (x&7);
+
+    const chunk = Math.max(8, EPD.mtu - 3);        // 去掉指令码和头字节
+    const total = Math.ceil(raw.length / chunk);
+    prog.textContent = `开始推送 ${w}×${h}，${raw.length} 字节，分 ${total} 片…`;
+
+    await epdWrite(EPD.CMD.INIT);
+    await sleep(120);
+
+    for(let i=0;i<total;i++){
+      const slice = raw.subarray(i*chunk, Math.min(raw.length, (i+1)*chunk));
+      const head = [0x00 | (i===0 ? 0x02 : 0x00)];   // 0x00 = 黑白块
+      await epdWrite(EPD.CMD.WRITE_IMG, head.concat(Array.from(slice)));
+      if(i % 4 === 3 || i === total-1){
+        prog.textContent = `推送中 ${i+1}/${total}（${Math.round(100*(i+1)/total)}%）`;
+        await sleep(12);                          // 让固件喘口气，避免溢出丢片
+      }
+    }
+    await epdWrite(EPD.CMD.REFRESH);
+    prog.textContent = `✅ 已发送 ${total} 片 + REFRESH。屏幕正在刷新，请勿断电。`;
+  }catch(e){
+    prog.textContent = "推送失败：" + (e && e.message ? e.message : e);
+  }
+  btn.disabled = false;
+}
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+$("blebtn").onclick = bleConnect;
+$("bledis").onclick = bleDisconnect;
+$("pushbtn").onclick = pushToEPD;
+window.addEventListener("beforeunload", ()=>{ try{ EPD.dev && EPD.dev.gatt.disconnect(); }catch(e){} });
+
+/* ---- 快速添加 ---- */
+function doAdd(){
+  const raw = $("quick").value.trim();
+  const v = $("verdict");
+  if(!raw) return;
+  const cats = getCats();
+  if(!cats.length){ flashVerdict("清单是空的，无法归类。"); return; }
+
+  const r = classify(raw, cats);
+  // 支持尾部数字：「洗发水 2」= 直接给数量
+  let n = null;
+  const m = raw.match(/^(.*?)[\s]+(\d+)\s*$/);
+  if(m) n = parseInt(m[2],10);
+
+  if(!r.cat){
+    askCategory(cats, r.name || raw, n);
+    return;
+  }
+  const name = r.name || raw;
+  const dup = cats.flatMap(c=>c.items).find(it=>it.name === name);
+  const qty = n != null ? n : 1;
+  addItem(r.cat, name, n);
+  $("quick").value = "";
+  v.hidden = false;
+  const hits = (r.hits||[]).filter(Boolean);
+  v.innerHTML = `已添加 <b>${esc(name)} ×${qty}</b> 到「<b>${esc(r.cat)}</b>」`
+    + (hits.length ? `（识别关键词：${esc(hits.join("、"))}）` : "")
+    + (dup && n == null ? ` · 已有同名项，数量已累加` : "");
+}
+$("addbtn").onclick = doAdd;
+$("quick").addEventListener("keydown", e=>{ if(e.key === "Enter"){ e.preventDefault(); doAdd(); } });
+
+/* ---- 快速减少 ---- */
+$("delbtn").onclick = ()=>{
+  const q = $("quickdel").value.trim();
+  const v = $("verdict");
+  if(!q) return;
+  const hits = findMatches(q, getCats());
+  if(!hits.length){ v.hidden = false; v.textContent = `清单里没有找到「${q}」。`; return; }
+  const h = hits[0];
+  const before = h.n;
+  bumpCount(h.cat, h.idx, -1);
+  v.hidden = false;
+  v.textContent = before <= 1
+    ? `「${h.name}」已用完，从「${h.cat}」移出清单。`
+    : `「${h.name}」在「${h.cat}」减到 ×${before-1}。`;
+  renderMatches();
+};
+$("quickdel").addEventListener("input", renderMatches);
+$("quickdel").addEventListener("keydown", e=>{ if(e.key === "Enter"){ e.preventDefault(); $("delbtn").click(); } });
+
 ["title","hdrstyle","hdrgray","src"].forEach(id=>{
   $(id).addEventListener("input", ()=>{
     readAll();
     clearTimeout(tm);
-    tm=setTimeout(()=>{ draw(); save(); }, id==="src" ? 120 : 60);
+    tm=setTimeout(()=>{ draw(); save(); renderCats(); renderMatches(); }, id==="src" ? 120 : 60);
   });
 });
 
 if(!load()) $("src").value = SAMPLE;
-fillInputs(); readAll(); draw();
+fillInputs(); readAll(); draw(); renderCats();
 window.__draw = draw; window.__P = P; window.__last = ()=>LAST;
 window.__DEFAULTS = DEFAULTS;
+window.__classify = classify;
+window.__find = findMatches;
 </script>
 </body>
 </html>
