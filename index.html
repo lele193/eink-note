@@ -127,6 +127,7 @@
     <div class="addrow">
       <select id="devsel"></select>
       <button id="newdev">新建</button>
+      <button id="deldev">删除</button>
     </div>
     <div class="hint">每块屏一份清单。连接后会自动切到那台屏的档案。</div>
     <div class="addrow" style="margin-top:8px">
@@ -134,7 +135,6 @@
       <button id="rebtn">重连</button>
     </div>
     <div class="hint" id="blestat">先连接，再推送。</div>
-    <div class="btns"><button id="deldev">删除此档案</button></div>
   </fieldset>
 
 
@@ -217,7 +217,7 @@ window.addEventListener("error", function(ev){
 });
 const $ = id => document.getElementById(id);
 
-const BUILD = "v16";
+const BUILD = "v17";
 $("build").textContent = "构建 " + BUILD;
 const FONT = '"PingFang SC","Hiragino Sans GB","Heiti SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif';
 
