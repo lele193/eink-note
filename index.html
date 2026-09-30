@@ -13,11 +13,19 @@
   header{padding:11px 14px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:10px}
   header h1{font-size:15px;margin:0;font-weight:600}
   header .sub{font-size:11px;color:var(--dim)}
-  main{display:grid;grid-template-columns:345px 1fr;height:calc(100vh - 46px)}
-  @media(max-width:880px){main{grid-template-columns:1fr;grid-template-rows:auto auto;height:auto}}
-  .side{overflow:auto;padding:12px;border-right:1px solid var(--line)}
-  @media(max-width:880px){.side{border-right:0;border-bottom:1px solid var(--line)}}
-  .stage{overflow:auto;padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px;background:#0b0d11}
+  main{display:grid;grid-template-columns:340px 1fr;height:calc(100vh - 46px)}
+  .side{overflow:auto;padding:12px;border-right:1px solid var(--line);min-height:0}
+  .stage{padding:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:6px;background:#0b0d11;min-height:0;overflow:hidden}
+
+  /* 手机：预览在上、清单在下，不吸顶；宽度永远不超过屏宽（不左右拖） */
+  @media(max-width:880px){
+    html,body{overflow-x:hidden;width:100%}
+    main{display:flex;flex-direction:column;height:auto;min-height:calc(100vh - 46px);width:100%}
+    .stage{order:-1;flex:0 0 auto;height:36vh;border-bottom:1px solid var(--line);
+      padding:8px;width:100%;max-width:100vw}
+    .side{flex:1 1 auto;overflow:visible;border-right:0;width:100%;max-width:100vw}
+  }
   fieldset{border:1px solid var(--line);border-radius:10px;margin:0 0 12px;padding:10px 10px 12px}
   legend{font-size:11px;color:var(--dim);padding:0 5px;letter-spacing:.06em}
   label{display:block;font-size:12px;color:var(--dim);margin:9px 0 4px}
@@ -36,10 +44,11 @@
     font:inherit;font-size:13px;cursor:pointer}
   button:hover{background:#2b3140}
   button.pri{background:var(--acc);border-color:var(--acc);color:#07101f;font-weight:600}
-  #preview{background:#fff;border-radius:4px;box-shadow:0 8px 30px rgba(0,0,0,.55);image-rendering:pixelated;display:block}
-  .meta{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--dim);text-align:center;
-    line-height:1.7;white-space:pre-wrap;max-width:640px}
-  .meta.warn{color:var(--warn,#ffb454)}
+  #preview{background:#fff;border-radius:3px;box-shadow:0 6px 20px rgba(0,0,0,.5);
+    image-rendering:pixelated;display:block}
+  .meta{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--dim);text-align:center;
+    line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .meta.warn{color:#ffb454}
   details{margin-top:8px}summary{font-size:12px;color:var(--dim);cursor:pointer}
   textarea.hex{font-size:11px;min-height:120px}
 
@@ -175,7 +184,7 @@ window.addEventListener("error", function(ev){
 });
 const $ = id => document.getElementById(id);
 
-const BUILD = "v6-clean";
+const BUILD = "v7-fit";
 $("build").textContent = "构建 " + BUILD + " · 分栏卡片 → 1bit 位图";
 const FONT = '"PingFang SC","Hiragino Sans GB","Heiti SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif';
 
@@ -755,17 +764,40 @@ function binarise(img){
   return o;
 }
 
+/* 画布尺寸 = 实际显示尺寸，用最近邻直接画进去。
+   放大取整数倍保持锐利；缩小时直接降分辨率（避免 CSS 非整数拉伸导致像素宽窄不一）。 */
 function paint(bits, src){
-  const w=src.width,h=src.height;
+  const w=src.width, h=src.height;
   const tmp=document.createElement("canvas"); tmp.width=w;tmp.height=h;
   const tc=tmp.getContext("2d"); const id=tc.createImageData(w,h);
   for(let i=0;i<w*h;i++){ const v=bits[i]?0:255; id.data[i*4]=id.data[i*4+1]=id.data[i*4+2]=v; id.data[i*4+3]=255; }
   tc.putImageData(id,0,0);
-  const zoom = Math.max(2, Math.min(8, Math.floor(700/Math.max(w,h))));
-  pv.width=w*zoom; pv.height=h*zoom;
-  pctx.imageSmoothingEnabled=false;
-  pctx.drawImage(tmp,0,0,pv.width,pv.height);
+
+  const stage = document.querySelector(".stage");
+  const availW = Math.max(60, Math.min(stage ? stage.clientWidth : 600, window.innerWidth) - 20);
+  const availH = Math.max(50, (stage ? stage.clientHeight : 400) - 34);
+
+  const scale = Math.min(availW / w, availH / h);
+  let tw, th;
+  if(scale >= 1){ const z = Math.min(Math.floor(scale), 6); tw = w*z; th = h*z; }
+  else { tw = Math.max(48, Math.round(w*scale)); th = Math.round(h*scale); }
+
+  pv.width = tw; pv.height = th;
+  pv.style.width  = tw + "px";
+  pv.style.height = th + "px";
+  pctx.imageSmoothingEnabled = false;
+  pctx.drawImage(tmp, 0, 0, tw, th);
 }
+
+// 尺寸变化时重算缩放（手机横竖屏切换、地址栏收起都要跟上）
+window.addEventListener("resize", function(){
+  if(window.__last && window.__last.src) paint(window.__last.bits, window.__last.src);
+});
+window.addEventListener("orientationchange", function(){
+  setTimeout(function(){
+    if(window.__last && window.__last.src) paint(window.__last.bits, window.__last.src);
+  }, 250);
+});
 
 /* ---------------- 帧缓冲 ---------------- */
 function pack(bits,w,h){
