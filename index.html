@@ -128,6 +128,7 @@
       <button id="rebtn">重连</button>
     </div>
     <div class="hint" id="blestat">先连接，再推送。</div>
+    <div class="btns"><button id="restorebtn">恢复上一版清单</button></div>
   </fieldset>
 
 
@@ -207,7 +208,7 @@ window.addEventListener("error", function(ev){
 });
 const $ = id => document.getElementById(id);
 
-const BUILD = "v13";
+const BUILD = "v15";
 $("build").textContent = "构建 " + BUILD;
 const FONT = '"PingFang SC","Hiragino Sans GB","Heiti SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif';
 
@@ -968,10 +969,49 @@ $("resetgeom") && ($("resetgeom").onclick = ()=>{
 
 let tm=null;
 function run(){ clearTimeout(tm); tm=setTimeout(()=>{ try{ draw(); }catch(e){ $("meta").textContent="错误: "+e.message; $("meta").className="meta warn"; } }, 60); }
-const STORE = "eink-inv/v12";    // 参数结构变过就升版本号，旧存档不再覆盖锁定项
-function save(){ try{ localStorage.setItem(STORE, JSON.stringify({src:$("src").value, title:P.title, hdrstyle:P.hdrstyle, hdrgray:P.hdrgray})); }catch(e){} }
+const STORE  = "eink-inv/v12";     // 当前存档
+const BACKUP = "eink-inv/backup";  // 上一版清单（保险）
+
+function statOf(src){
+  const cats = parse(String(src || ""));
+  return { cats: cats.length, items: cats.reduce((a,c)=>a+c.items.length, 0) };
+}
+
+// 保存：先备份上一版；一旦发现「清单突然少了一半以上」，自动回滚
+function save(){
+  try{
+    const prev = localStorage.getItem(STORE);
+    if(prev){
+      const oldSrc = (JSON.parse(prev)||{}).src;
+      if(typeof oldSrc === "string" && oldSrc.trim()){
+        const a = statOf(oldSrc), b = statOf($("src").value);
+        // 明显异常才回滚：正常删除都是一次点一个 ✕，不会突然掉一半
+        const wipe  = (a.items > 0 && b.items === 0);
+        const halfItems = (a.items >= 6 && b.items < a.items * 0.5);
+        const halfCats  = (a.cats  >= 3 && b.cats  < a.cats  * 0.5);
+        if(wipe || halfItems || halfCats){
+          localStorage.setItem(BACKUP, prev);
+          $("src").value = oldSrc;                       // 回滚
+          setTimeout(function(){
+            if(LAST) { draw(); }
+            renderCats(); renderMatches();
+            toast("清单异常变少，已自动恢复上一版");
+          }, 30);
+          return;
+        }
+        localStorage.setItem(BACKUP, prev);              // 正常情况也留一份上一版
+      }
+    }
+    localStorage.setItem(STORE, JSON.stringify({
+      src:$("src").value, title:P.title, hdrstyle:P.hdrstyle, hdrgray:P.hdrgray
+    }));
+  }catch(e){}
+}
+
 function load(){
-  try{ const r=localStorage.getItem(STORE); if(!r) return false;
+  try{
+    const r=localStorage.getItem(STORE);
+    if(!r) return false;
     const s=JSON.parse(r);
     if(s.src) $("src").value=s.src;
     if(s.title) P.title=s.title;
@@ -1239,6 +1279,20 @@ if(!load()) $("src").value = SAMPLE;
 fillInputs(); readAll(); draw(); renderCats();
 $("preview").onclick = openZoom;
 $("zoomlay").onclick = closeZoom;
+$("restorebtn").onclick = function(){
+  try{
+    const b = localStorage.getItem(BACKUP);
+    if(!b){ toast("没有可恢复的备份"); return; }
+    const oldSrc = (JSON.parse(b)||{}).src;
+    const a = statOf($("src").value), o = statOf(oldSrc);
+    if(!confirm("将用上一版清单替换当前清单：\n当前 " + a.cats + " 类 / " + a.items + " 项"
+              + "\n备份 " + o.cats + " 类 / " + o.items + " 项\n\n继续？")) return;
+    $("src").value = oldSrc;
+    draw(); renderCats(); renderMatches();
+    localStorage.setItem(STORE, b);      // 恢复后同步主存档
+    toast("已恢复上一版清单");
+  }catch(e){ toast("恢复失败：" + e); }
+};
 document.addEventListener("keydown", function(e){ if(e.key === "Escape") closeZoom(); });
 window.__booted = true;
 window.__draw = draw; window.__P = P; window.__last = ()=>LAST;
