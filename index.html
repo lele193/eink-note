@@ -20,6 +20,12 @@
   .previewbox{border:1px solid var(--line);border-radius:10px;padding:10px 10px 12px;
     margin:0;width:100%;max-width:420px;display:flex;flex-direction:column;align-items:center;gap:8px}
   .previewbox legend{font-size:11px;color:var(--dim);padding:0 5px;letter-spacing:.06em}
+  /* 推送状态：只在推送按钮下方，与连接状态分开 */
+  .pushstat{width:100%;text-align:center;min-height:16px;margin:0 0 6px;
+    color:#9aa2b0;opacity:.75}
+  .pushstat.busy{color:var(--acc);opacity:1}
+  .pushstat.ok{color:#3ecf8e;opacity:1}
+  .pushstat.err{color:#ff9a6b;opacity:1}
   #preview{cursor:zoom-in}
 
   /* 点图全屏 */
@@ -80,6 +86,15 @@
   .chip:hover{background:#242a35}
   .chip .who{color:var(--dim);font-size:11px}
   .chip .n{font-variant-numeric:tabular-nums;color:var(--acc)}
+
+  /* 轻提示 */
+  #toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));
+    transform:translateX(-50%) translateY(14px);z-index:120;
+    background:#eef1f6;color:#12161d;padding:10px 16px;border-radius:999px;
+    font-size:13px;line-height:1.35;max-width:calc(100vw - 32px);width:max-content;
+    box-shadow:0 8px 26px rgba(0,0,0,.45);opacity:0;pointer-events:none;
+    transition:opacity .18s ease, transform .18s ease}
+  #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .cat{border:1px solid var(--line);border-radius:9px;margin-bottom:9px;overflow:hidden}
   .cat>h4{margin:0;padding:8px 10px;font-size:13px;font-weight:600;background:#131720;
     display:flex;justify-content:space-between;align-items:center}
@@ -167,6 +182,7 @@
   <fieldset class="previewbox">
     <legend>预览</legend>
     <button class="pri" id="pushbtn" disabled style="width:100%;margin:0 0 4px">推送清单</button>
+    <div class="hint pushstat" id="pushstat"></div>
     <canvas id="preview" title="点击可全屏放大"></canvas>
     <div class="meta" id="meta"></div>
   </fieldset>
@@ -176,6 +192,8 @@
   <canvas id="zoomcv"></canvas>
   <button class="zclose">关闭</button>
 </div>
+
+<div id="toast"></div>
 </main>
 
 <script>
@@ -189,7 +207,7 @@ window.addEventListener("error", function(ev){
 });
 const $ = id => document.getElementById(id);
 
-const BUILD = "v11";
+const BUILD = "v13";
 $("build").textContent = "构建 " + BUILD;
 const FONT = '"PingFang SC","Hiragino Sans GB","Heiti SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif';
 
@@ -373,8 +391,7 @@ function renderMatches(){
     b.className = "chip";
     b.innerHTML = `<span>${esc(h.name)}</span><span class="n">×${h.n}</span><span class="who">${esc(h.cat)}</span>`;
     b.onclick = ()=>{
-      const r = bumpCount(h.cat, h.idx, -1);
-      if(r === "floor") flashVerdict(`「${h.name}」已经是 ×1 了。要从清单移除请在清单里点 ✕。`);
+      bumpCount(h.cat, h.idx, -1);      // 提示由 bumpCount 统一负责
       renderMatches();
     };
     box.appendChild(b);
@@ -385,15 +402,30 @@ function renderMatches(){
     box.appendChild(s);
   }
 }
+/* 轻提示：底部浮出，1.6s 自动消失；连点会顺延 */
+let toastTimer = null;
+function toast(msg){
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ el.classList.remove("on"); }, 1600);
+}
+
 function bumpCount(catTitle, idx, delta){
   const cats = getCats();
   const c = cats.find(x=>x.title === catTitle);
   if(!c || !c.items[idx]) return "none";
-  const cur = c.items[idx].n || 1;
-  if(delta < 0 && cur <= 1) return "floor";      // 到 1 为止，不自动删除；删除请点 ✕
-  c.items[idx].n = Math.max(1, cur + delta);
+  const it = c.items[idx];
+  const cur = it.n || 1;
+  if(delta < 0 && cur <= 1){                    // 到 1 为止，不自动删除
+    toast("「" + it.name + "」已经是最小值 1，要移除请点 ✕");
+    return "floor";
+  }
+  it.n = Math.max(1, cur + delta);
+  if(it.n === 1) toast("「" + it.name + "」只剩 1 个了");
   setCats(cats);
-  return c.items[idx].n;
+  return it.n;
 }
 function removeItem(catTitle, idx){
   const cats = getCats();
@@ -429,8 +461,7 @@ function renderCats(){
       const st = document.createElement("div"); st.className = "stepper";
       const minus = document.createElement("button"); minus.textContent = "−";
       minus.title = "减少（最少 1，删除请点 ✕）";
-      minus.onclick = ()=>{ const r = bumpCount(c.title, i, -1);
-        if(r === "floor") flashVerdict(`「${it.name}」已经是 ×1 了。要从清单移除请点右侧 ✕。`); };
+      minus.onclick = ()=> bumpCount(c.title, i, -1);
       const num = document.createElement("span"); num.className = "n"; num.textContent = "×"+(it.n||1);
       const plus = document.createElement("button"); plus.textContent = "+";
       plus.title = "增加"; plus.onclick = ()=>bumpCount(c.title, i, +1);
@@ -1000,6 +1031,13 @@ function bleStat(t, warn){
   el.style.color = warn ? "#ffb454" : "";
 }
 
+/* 推送状态单独显示在推送按钮下方 */
+function pushStat(t, kind){
+  const el = $("pushstat");
+  el.textContent = t;
+  el.className = "hint pushstat" + (kind ? " " + kind : "");
+}
+
 async function bleConnect(){
   if(!navigator.bluetooth){
     bleStat("这个浏览器不支持蓝牙连接，请用 Bluefy 打开。", true); return;
@@ -1039,6 +1077,7 @@ async function bleConnect(){
 
     $("pushbtn").disabled = false;
     bleStat("已连接，可以推送清单。");
+    pushStat("");
   }catch(e){
     bleStat("连接失败：" + (e && e.message ? e.message : e), true);
   }
@@ -1073,6 +1112,7 @@ async function bleReconnect(){
     }catch(e){}
     $("pushbtn").disabled = false;
     bleStat("已重新连接。");
+    pushStat("");
   }catch(e){
     bleStat("重连失败：" + (e && e.message ? e.message : e) + "，可再点一次「连接设备」。", true);
   }
@@ -1088,7 +1128,7 @@ async function epdWrite(cmd, payload){
 function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
 
 async function pushToEPD(){
-  if(!EPD.chr){ bleStat("请先点「连接设备」。", true); return; }
+  if(!EPD.chr){ bleStat("请先点「连接设备」。", true); pushStat("还没连上设备", "err"); return; }
   if(!LAST) draw();
   const btn = $("pushbtn");
   btn.disabled = true;
@@ -1118,7 +1158,7 @@ async function pushToEPD(){
       payload.set(slice, 1);
       await epdWrite(EPD.CMD.WRITE_IMG, payload);
       if(i % 4 === 3 || i === total-1){
-        bleStat(`正在推送 ${i+1}/${total}…`);
+        pushStat(`正在推送 ${i+1}/${total}…`, "busy");
         await sleep(15);
       }
     }
@@ -1127,9 +1167,9 @@ async function pushToEPD(){
     await epdWrite(EPD.CMD.REFRESH);
     await sleep(150);
     await epdWrite(EPD.CMD.REFRESH);
-    bleStat("已推送，屏幕正在刷新，请勿断电。");
+    pushStat("已推送，屏幕正在刷新，请勿断电。", "ok");
   }catch(e){
-    bleStat("推送失败：" + (e && e.message ? e.message : e), true);
+    pushStat("推送失败：" + (e && e.message ? e.message : e), "err");
   }
   btn.disabled = false;
 }
@@ -1179,12 +1219,9 @@ $("delbtn").onclick = ()=>{
   const hits = findMatches(q, getCats());
   if(!hits.length){ v.hidden = false; v.textContent = `清单里没有找到「${q}」。`; return; }
   const h = hits[0];
-  const before = h.n;
-  bumpCount(h.cat, h.idx, -1);
-  v.hidden = false;
-  v.textContent = before <= 1
-    ? `「${h.name}」已用完，从「${h.cat}」移出清单。`
-    : `「${h.name}」在「${h.cat}」减到 ×${before-1}。`;
+  bumpCount(h.cat, h.idx, -1);      // 提示由 bumpCount 统一负责
+  v.hidden = true;
+  $("quickdel").value = "";
   renderMatches();
 };
 $("quickdel").addEventListener("input", renderMatches);
