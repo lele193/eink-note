@@ -938,9 +938,10 @@ async function bleConnect(){
   if(!navigator.bluetooth){ box.hidden=false; box.textContent="这个浏览器不支持 Web Bluetooth。请用 Bluefy（iOS）或 Chrome/Edge。"; return; }
   try{
     box.hidden=false; box.textContent="正在搜索设备…";
+    // 注意：必须用 acceptAllDevices，不要用 filters —— Bluefy 对 filters 支持不好
     EPD.dev = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: "NRF_EPD" }],
-      optionalServices: [EPD.svc]
+      optionalServices: [EPD.svc],
+      acceptAllDevices: true
     });
   }catch(e){
     box.textContent = "未连接：" + (e && e.message ? e.message : e);
@@ -988,7 +989,12 @@ function bleDisconnect(){
 }
 
 async function epdWrite(cmd, payload){
-  const buf = payload ? new Uint8Array([cmd, ...payload]) : new Uint8Array([cmd]);
+  let buf;
+  if(payload){
+    buf = new Uint8Array(payload.length + 1);
+    buf[0] = cmd;
+    buf.set(payload, 1);
+  } else buf = new Uint8Array([cmd]);
   // 优先无响应写（快），失败再退回有响应写（保证不丢）
   try{ await EPD.chr.writeValueWithoutResponse(buf); }
   catch(e){ await EPD.chr.writeValueWithResponse(buf); }
@@ -1015,8 +1021,10 @@ async function pushToEPD(){
 
     for(let i=0;i<total;i++){
       const slice = raw.subarray(i*chunk, Math.min(raw.length, (i+1)*chunk));
-      const head = [0x00 | (i===0 ? 0x02 : 0x00)];   // 0x00 = 黑白块
-      await epdWrite(EPD.CMD.WRITE_IMG, head.concat(Array.from(slice)));
+      const payload = new Uint8Array(slice.length + 1);
+      payload[0] = 0x00 | (i===0 ? 0x02 : 0x00);    // 0x00 = 黑白块；0x02 = 首片标记
+      payload.set(slice, 1);
+      await epdWrite(EPD.CMD.WRITE_IMG, payload);
       if(i % 4 === 3 || i === total-1){
         prog.textContent = `推送中 ${i+1}/${total}（${Math.round(100*(i+1)/total)}%）`;
         await sleep(12);                          // 让固件喘口气，避免溢出丢片
