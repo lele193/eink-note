@@ -183,10 +183,17 @@
 
 <script>
 "use strict";
-const BUILD = "v4-push";
-$("build").textContent = "构建 " + BUILD + " · 分栏卡片 → 1bit 位图";
-
+// 脚本整体出错时给出可见提示（否则表现为「按钮点了没反应」）
+window.__booted = false;
+window.addEventListener("error", function(ev){
+  if(window.__booted) return;
+  var b = document.getElementById("build");
+  if(b){ b.textContent = "⚠ 脚本出错：" + (ev.message||"") + " —— 请刷新或换浏览器"; b.style.color = "#ff7b7b"; }
+});
 const $ = id => document.getElementById(id);
+
+const BUILD = "v5-push";
+$("build").textContent = "构建 " + BUILD + " · 分栏卡片 → 1bit 位图";
 const FONT = '"PingFang SC","Hiragino Sans GB","Heiti SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif';
 
 const pv = $("preview"), pctx = pv.getContext("2d");
@@ -1169,6 +1176,7 @@ $("quickdel").addEventListener("keydown", e=>{ if(e.key === "Enter"){ e.preventD
 
 if(!load()) $("src").value = SAMPLE;
 fillInputs(); readAll(); draw(); renderCats();
+window.__booted = true;
 window.__draw = draw; window.__P = P; window.__last = ()=>LAST;
 window.__DEFAULTS = DEFAULTS;
 window.__classify = classify;
