@@ -20,6 +20,15 @@
   .previewbox{border:1px solid var(--line);border-radius:10px;padding:10px 10px 12px;
     margin:0;width:100%;max-width:420px;display:flex;flex-direction:column;align-items:center;gap:8px}
   .previewbox legend{font-size:11px;color:var(--dim);padding:0 5px;letter-spacing:.06em}
+  #preview{cursor:zoom-in}
+
+  /* 点图全屏 */
+  #zoomlay{position:fixed;inset:0;z-index:99;background:rgba(6,8,12,.96);display:none;
+    flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px}
+  #zoomlay.on{display:flex}
+  #zoomlay canvas{image-rendering:pixelated;background:#fff;border-radius:4px;max-width:100%;max-height:82vh}
+  #zoomlay .zclose{color:#8b93a3;font-size:13px;background:#181c24;border:1px solid #272c36;
+    border-radius:999px;padding:8px 16px}
 
   /* 手机：单列排布，预览在所有内容之后，宽度与其它输入框同宽 */
   @media(max-width:880px){
@@ -117,9 +126,6 @@
       <option value="solid">纯黑底 + 反白字</option>
       <option value="none">无底 + 黑字</option>
     </select>
-    <label>深浅 <span id="hdrgrayv" class="hint" style="display:inline"></span></label>
-    <input type="range" id="hdrgray" min="0" max="100" step="25">
-    <div class="hint">1bpp 没有连续灰，深浅靠网点密度表现：50% 是 2×2 棋盘，75% 每 4 个像素涂 3 个。拖到 100% 等同纯黑。</div>
   </fieldset>
 
   <fieldset>
@@ -172,9 +178,14 @@
 <div class="stage">
   <fieldset class="previewbox">
     <legend>预览</legend>
-    <canvas id="preview"></canvas>
+    <canvas id="preview" title="点击可全屏放大"></canvas>
     <div class="meta" id="meta"></div>
   </fieldset>
+</div>
+
+<div id="zoomlay">
+  <canvas id="zoomcv"></canvas>
+  <button class="zclose">关闭</button>
 </div>
 </main>
 
@@ -189,7 +200,7 @@ window.addEventListener("error", function(ev){
 });
 const $ = id => document.getElementById(id);
 
-const BUILD = "v8-bottom";
+const BUILD = "v9-clean";
 $("build").textContent = "构建 " + BUILD + " · 分栏卡片 → 1bit 位图";
 const FONT = '"PingFang SC","Hiragino Sans GB","Heiti SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif';
 
@@ -472,7 +483,12 @@ function layout(design, cats){
   const top = hdrH + Math.round(H*0.012);
   const pad = P.pad;
   const gap = P.gap;
-  const cardW = Math.floor((W - pad*2 - gap*(P.cols-1)) / P.cols);
+  // 栏宽：先整除，把余数分给前几栏，保证总宽正好填满屏幕（否则右侧会留 1px 白边）
+  const total = W - pad*2 - gap*(P.cols-1);
+  const baseW = Math.floor(total / P.cols);
+  const extra  = total - baseW * P.cols;          // 0 ~ cols-1
+  const colW = i => baseW + (i < extra ? 1 : 0);
+  const cardW = baseW;
   if(cardW < 12){ L.warn.push("栏数过多/间距太大，每栏不足 12px"); }
   const cardH = H - top - pad;
   const innerW = cardW - Math.round(cardW*P.inset);   // 卡片内缩
@@ -560,7 +576,8 @@ function layout(design, cats){
     cats.forEach((c,i)=>{ buckets[i] = [{cat:c, m:m[i]}]; });
   }
 
-  L.buckets = buckets; L.cardW = cardW; L.cardH = cardH; L.colH = cardH; L.top = top; L.pad = pad;
+  L.buckets = buckets; L.cardW = cardW; L.colW = colW; L.cardH = cardH; L.colH = cardH;
+  L.top = top; L.pad = pad;
   L.gap = gap; L.innerW = innerW; L.ipad = ipad; L.iLineH = iLineH;
   return L;
 }
@@ -676,7 +693,8 @@ function draw(){
   /* --- 卡片 --- */
   octx.fillStyle = "#000"; octx.strokeStyle = "#000";
   L.buckets.forEach((bucket,k)=>{
-    const x = L.pad + k*(L.cardW + L.gap);
+    const cw2 = L.colW(k);                     // 该栏实际宽度（吸收整除余数）
+    const x = L.pad + k*(cw2 + L.gap);
     let y = L.top;
     bucket.forEach(({cat, m:mm}, idx)=>{
       const n = bucket.length;
@@ -685,7 +703,7 @@ function draw(){
         : Math.min(mm.h, L.colH);
       if(P.cardborder){
         octx.lineWidth = Math.max(1, Math.round(W*0.0022));
-        rr(x, y, L.cardW, cardH, Math.round(Math.min(L.cardW,cardH)*0.05));
+        rr(x, y, cw2, cardH, Math.round(Math.min(cw2,cardH)*0.05));
         octx.stroke();
       }
       let cy = y + mm.padTop + mm.tSize;
@@ -694,7 +712,7 @@ function draw(){
       cy = y + mm.padTop + mm.tLines.length*mm.tLH + mm.gapTI;
       octx.font = font(mm.ifs, P.light?400:700);
       let clipped = false;
-      const rightX = x + L.cardW - L.ipad;
+      const rightX = x + cw2 - L.ipad;
       for(const line of mm.lines){
         if(cy > y + cardH - Math.round(mm.ifs*0.30)){ clipped = true; break; }
         octx.fillText(line.name, x+L.ipad, cy);
@@ -786,7 +804,11 @@ function paint(bits, src){
     (stage ? stage.clientWidth - padX : 600),
     window.innerWidth - 26
   ));
-  const availH = Math.max(50, (stage ? stage.clientHeight : 400) - 34);
+  // 高度：只有预览区高度是被 CSS 固定死时（桌面右栏）才受它限制；
+  // 手机上高度由内容决定，若拿它当上限会把图压得很小 —— 此时只按宽度定。
+  const fixedH = stage && stage.clientHeight > 120 &&
+                 getComputedStyle(stage).height !== "auto";
+  const availH = fixedH ? (stage.clientHeight - 34) : 4000;
 
   const scale = Math.min(availW / w, availH / h);
   let tw, th;
@@ -809,6 +831,26 @@ window.addEventListener("orientationchange", function(){
     if(window.__last && window.__last.src) paint(window.__last.bits, window.__last.src);
   }, 250);
 });
+
+// 点预览图 → 全屏放大；再点关闭
+function openZoom(){
+  if(!LAST) return;
+  const lay = $("zoomlay"), zc = $("zoomcv");
+  const w = LAST.w, h = LAST.h, bits = LAST.bits;
+  // 全屏时按屏宽放大到整数倍，最清晰的查看方式
+  const zoom = Math.max(1, Math.floor((window.innerWidth - 34) / w));
+  zc.width = w*zoom; zc.height = h*zoom;
+  zc.style.width = zc.width + "px"; zc.style.height = zc.height + "px";
+  const zx = zc.getContext("2d");
+  const tmp = document.createElement("canvas"); tmp.width=w; tmp.height=h;
+  const tc = tmp.getContext("2d"); const id = tc.createImageData(w,h);
+  for(let i=0;i<w*h;i++){ const v = bits[i]?0:255; id.data[i*4]=id.data[i*4+1]=id.data[i*4+2]=v; id.data[i*4+3]=255; }
+  tc.putImageData(id,0,0);
+  zx.imageSmoothingEnabled = false;
+  zx.drawImage(tmp,0,0,zc.width,zc.height);
+  lay.classList.add("on");
+}
+function closeZoom(){ $("zoomlay").classList.remove("on"); }
 
 /* ---------------- 帧缓冲 ---------------- */
 function pack(bits,w,h){
@@ -866,14 +908,11 @@ function readAll(){
   Object.assign(P, DEFAULTS);                    // 先复位，保证锁定项不被存档污染
   P.title    = $("title").value;
   P.hdrstyle = $("hdrstyle").value;
-  P.hdrgray  = Math.round(+$("hdrgray").value) / 100;
-  $("hdrgrayv").textContent = Math.round(P.hdrgray*100) + "%";
+  P.hdrgray  = 0.5;                 // 灰底深浅固定为中灰（界面不再开放调节）
 }
 function fillInputs(){
   $("title").value    = P.title;
   $("hdrstyle").value = P.hdrstyle;
-  $("hdrgray").value  = Math.round(P.hdrgray*100);
-  $("hdrgrayv").textContent = Math.round(P.hdrgray*100) + "%";
 }
 
 const SAMPLE = [
@@ -1152,7 +1191,7 @@ $("delbtn").onclick = ()=>{
 $("quickdel").addEventListener("input", renderMatches);
 $("quickdel").addEventListener("keydown", e=>{ if(e.key === "Enter"){ e.preventDefault(); $("delbtn").click(); } });
 
-["title","hdrstyle","hdrgray","src"].forEach(id=>{
+["title","hdrstyle","src"].forEach(id=>{
   $(id).addEventListener("input", ()=>{
     readAll();
     clearTimeout(tm);
@@ -1162,6 +1201,9 @@ $("quickdel").addEventListener("keydown", e=>{ if(e.key === "Enter"){ e.preventD
 
 if(!load()) $("src").value = SAMPLE;
 fillInputs(); readAll(); draw(); renderCats();
+$("preview").onclick = openZoom;
+$("zoomlay").onclick = closeZoom;
+document.addEventListener("keydown", function(e){ if(e.key === "Escape") closeZoom(); });
 window.__booted = true;
 window.__draw = draw; window.__P = P; window.__last = ()=>LAST;
 window.__DEFAULTS = DEFAULTS;
