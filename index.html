@@ -217,7 +217,7 @@ window.addEventListener("error", function(ev){
 });
 const $ = id => document.getElementById(id);
 
-const BUILD = "v17";
+const BUILD = "v18";
 $("build").textContent = "构建 " + BUILD;
 const FONT = '"PingFang SC","Hiragino Sans GB","Heiti SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif';
 
@@ -234,7 +234,7 @@ const DEFAULTS = {
   gap:5, pad:6, inset:0.05, ipad:0.04,
   // 标题条
   title:"备货库存", tfs:38, tfw:500,
-  hdrfull:true, hdrstyle:"gray", hdrgray:0.5,
+  hdrfull:true, hdrstyle:"solid", hdrgray:0.5,
   hdrline:false, hdrlinew:15,
   // 卡片文字
   cfs:18, ifs:13, lht:145, tgap:3,
@@ -1020,7 +1020,7 @@ function curDev(){ return DB.devices[DB.current] || null; }
 // seed: 新建时的初始内容（手动新建用空清单；连接新设备则复制当前内容当起点）
 function switchDev(name, seed){
   if(!DB.devices[name]){
-    DB.devices[name] = { title: "备货库存", src: (seed != null ? seed : ""), hdrstyle: "gray" };
+    DB.devices[name] = { title: "备货库存", src: (seed != null ? seed : ""), hdrstyle: DEFAULTS.hdrstyle };
   }
   DB.current = name;
   const d = DB.devices[name];
@@ -1085,7 +1085,7 @@ function load(){
   const ok = dbRead();
   if(!ok){
     // 首次：把原来单档的数据迁进来
-    let src = SAMPLE, title = "备货库存", style = "gray";
+    let src = SAMPLE, title = "备货库存", style = DEFAULTS.hdrstyle;
     try{
       const old = JSON.parse(localStorage.getItem("eink-inv/v12") || "null");
       if(old && typeof old.src === "string" && old.src.trim()) src = old.src;
