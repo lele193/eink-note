@@ -1,8 +1,8 @@
-# 本地辅助脚本，不发布到 Pages
+# 本地辅助脚本与生成物，不发布到 Pages
 serve.py
+probe.py
+probe_deep.py
 _devserver.py
 *.png
 
-# 蓝牙探测脚本（本地调试用）
-probe.py
-probe_deep.py
+check-env.sh
