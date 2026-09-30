@@ -86,6 +86,17 @@
 <div class="side">
 
   <fieldset>
+    <legend>墨水屏</legend>
+    <div class="addrow">
+      <button class="pri" id="blebtn">连接设备</button>
+      <button id="pushbtn" disabled>推送清单</button>
+      <button id="bledis">断开</button>
+    </div>
+    <div class="hint" id="blestat">先连接，再推送。</div>
+  </fieldset>
+
+
+  <fieldset>
     <legend>标题背景色</legend>
     <label>标题文字</label>
     <input type="text" id="title" placeholder="备货库存">
@@ -131,34 +142,6 @@
   </fieldset>
 
 
-  <fieldset>
-    <legend>推送到墨水屏</legend>
-    <div id="blebox">
-      <div class="addrow">
-        <button class="pri" id="blebtn">① 连接设备</button>
-        <button id="bledis">断开</button>
-      </div>
-      <div id="bleinfo" class="verdict" hidden></div>
-      <label>屏幕驱动（4.2 寸）</label>
-      <select id="drv">
-        <option value="1">4.2寸 黑白 UC8176</option>
-        <option value="4">4.2寸 黑白 SSD1619</option>
-        <option value="3">4.2寸 三色 UC8176</option>
-        <option value="2">4.2寸 三色 SSD1619</option>
-        <option value="5">4.2寸 四色 JD79668</option>
-      </select>
-      <div class="hint" id="pininfo">连接后这里会显示设备实际的引脚配置。</div>
-      <div class="btns">
-        <button id="applybtn" disabled>② 应用驱动（不清屏）</button>
-        <button class="pri" id="pushbtn" disabled>③ 推送清单</button>
-      </div>
-      <div id="pushprog" class="meta" style="text-align:left;white-space:pre-wrap"></div>
-    </div>
-    <div class="hint">
-      协议来自固件 <code>tsl0922/EPD-nRF5</code>。<b>必须先「应用驱动」，否则面板没初始化，显示会是花的。</b><br>
-      驱动选错也一样是花屏 —— 先试「黑白 UC8176」，花了就换「黑白 SSD1619」。
-    </div>
-  </fieldset>
 
   <fieldset>
     <legend>导出</legend>
@@ -192,7 +175,7 @@ window.addEventListener("error", function(ev){
 });
 const $ = id => document.getElementById(id);
 
-const BUILD = "v5-push";
+const BUILD = "v6-clean";
 $("build").textContent = "构建 " + BUILD + " · 分栏卡片 → 1bit 位图";
 const FONT = '"PingFang SC","Hiragino Sans GB","Heiti SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif';
 
@@ -951,35 +934,28 @@ const EPD = {
   write:  "62750002-d828-918d-fb46-b6c11c675aec",
   verChr: "62750003-d828-918d-fb46-b6c11c675aec",
   CMD: { SET_PINS:0x00, INIT:0x01, WRITE_IMG:0x30, REFRESH:0x05 },
-  dev:null, chr:null, mtu:20, rle:false, pins:null, drv:0x01, connected:false
+  DRV: 0x04,          // 4.2" 黑白 SSD1619 —— 实测这块屏只有它能正常显示
+  dev:null, chr:null, mtu:20, rle:false, pins:null, connected:false
 };
-// 4.2 寸驱动表（value 就是 INIT 的参数）
-const DRIVERS = [
-  { v:0x01, label:"4.2寸 黑白 UC8176", color:"bw" },
-  { v:0x04, label:"4.2寸 黑白 SSD1619", color:"bw" },
-  { v:0x03, label:"4.2寸 三色 UC8176", color:"3c" },
-  { v:0x02, label:"4.2寸 三色 SSD1619", color:"3c" },
-  { v:0x05, label:"4.2寸 四色 JD79668", color:"4c" }
-];
 
-function hex2bytes(h){ h=String(h||"").trim();
-  if(h.length%2) h="0"+h;
-  const a=[]; for(let i=0;i<h.length;i+=2) a.push(parseInt(h.substr(i,2),16));
-  return new Uint8Array(a);
+function bleStat(t, warn){
+  const el = $("blestat");
+  el.textContent = t;
+  el.style.color = warn ? "#ffb454" : "";
 }
 
 async function bleConnect(){
-  const box = $("bleinfo");
-  if(!navigator.bluetooth){ box.hidden=false; box.textContent="这个浏览器不支持 Web Bluetooth。请用 Bluefy（iOS）或 Chrome/Edge。"; return; }
+  if(!navigator.bluetooth){
+    bleStat("这个浏览器不支持蓝牙连接，请用 Bluefy 打开。", true); return;
+  }
+  bleStat("正在搜索设备…");
   try{
-    box.hidden=false; box.textContent="正在搜索设备…";
-    // 注意：必须用 acceptAllDevices，不要用 filters —— Bluefy 对 filters 支持不好
+    // 必须 acceptAllDevices，Bluefy 对 filters 支持不好
     EPD.dev = await navigator.bluetooth.requestDevice({
-      optionalServices: [EPD.svc],
-      acceptAllDevices: true
+      optionalServices: [EPD.svc], acceptAllDevices: true
     });
   }catch(e){
-    box.textContent = "未连接：" + (e && e.message ? e.message : e);
+    bleStat("未连接" + (e && e.name === "NotFoundError" ? "（已取消）" : "：" + (e.message||e)), true);
     return;
   }
   try{
@@ -988,112 +964,80 @@ async function bleConnect(){
     EPD.chr = await svc.getCharacteristic(EPD.write);
     EPD.connected = true;
 
-    let ver = "未知";
-    try{
-      const v = await (await svc.getCharacteristic(EPD.verChr)).readValue();
-      ver = "0x" + new Uint8Array(v.buffer)[0].toString(16);
-    }catch(e){}
-
-    let cfgMsg = 0;
+    let first = true;
     try{
       await EPD.chr.startNotifications();
       EPD.chr.addEventListener("characteristicvaluechanged", ev=>{
         const u8 = new Uint8Array(ev.target.value.buffer, ev.target.value.byteOffset, ev.target.value.byteLength);
-        if(cfgMsg === 0){                       // 第 0 条通知是设备当前配置（二进制）
-          cfgMsg++;
+        if(first){                                  // 首条通知 = 设备当前引脚配置
+          first = false;
           EPD.pins = Array.prototype.slice.call(u8, 0, 7);
           if(u8.length > 10) EPD.pins.push(u8[10]);
-          EPD.cfgDrv = u8[7];
-          $("pininfo").textContent = "设备引脚 " + EPD.pins.map(b=>b.toString(16).padStart(2,"0")).join("")
-                                    + " · 固件记录驱动 0x" + EPD.cfgDrv.toString(16);
-          // 若下拉框还没选，就按设备记录的驱动预选
-          const hit = DRIVERS.find(d=>d.v === EPD.cfgDrv);
-          if(hit) $("drv").value = String(hit.v);
           return;
         }
         const msg = new TextDecoder().decode(u8);
         if(msg.indexOf("mtu=") === 0){ const n=parseInt(msg.substring(4),10); if(n>0) EPD.mtu=n; }
         if(msg.indexOf("rle=1") >= 0) EPD.rle = true;
-        $("bleinfo").innerHTML += `<div style="opacity:.7">← ${esc(msg.trim())}</div>`;
       });
     }catch(e){}
 
-    box.innerHTML = `已连接 <b>${esc(EPD.dev.name || "")}</b> · 固件 ${ver} · MTU ${EPD.mtu} · ${EPD.rle?"支持RLE":"旧版传输"}`;
-    $("blebtn").textContent = "重新连接";
-    $("applybtn").disabled = false;
     $("pushbtn").disabled = false;
+    $("blebtn").textContent = "重新连接";
+    bleStat("已连接，可以推送清单。");
   }catch(e){
-    box.textContent = "连接失败：" + (e && e.message ? e.message : e);
+    bleStat("连接失败：" + (e && e.message ? e.message : e), true);
   }
 }
 
 function bleDisconnect(){
   try{ if(EPD.dev && EPD.dev.gatt.connected) EPD.dev.gatt.disconnect(); }catch(e){}
   EPD.connected = false; EPD.chr = null;
-  $("pushbtn").disabled = true; $("applybtn").disabled = true;
+  $("pushbtn").disabled = true;
   $("blebtn").textContent = "连接设备";
-  const box = $("bleinfo"); box.hidden = false; box.textContent = "已断开。";
+  bleStat("已断开。");
 }
 
 async function epdWrite(cmd, payload){
   let buf;
-  if(payload){
-    buf = new Uint8Array(payload.length + 1);
-    buf[0] = cmd; buf.set(payload, 1);
-  } else buf = new Uint8Array([cmd]);
+  if(payload){ buf = new Uint8Array(payload.length + 1); buf[0] = cmd; buf.set(payload, 1); }
+  else buf = new Uint8Array([cmd]);
   try{ await EPD.chr.writeValueWithoutResponse(buf); }
   catch(e){ await EPD.chr.writeValueWithResponse(buf); }
 }
 function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
 
-// 下发引脚 + 驱动（不清屏），让固件按正确时序初始化面板
-async function applyDriver(){
-  if(!EPD.chr) return;
-  const prog = $("pushprog");
-  prog.textContent = "正在下发驱动…";
-  const pins = EPD.pins ? new Uint8Array(EPD.pins) : new Uint8Array([0x00,0x00,0x00,0x00,0x00,0x00,0x00]);
-  await epdWrite(EPD.CMD.SET_PINS, pins);
-  await sleep(120);
-  await epdWrite(EPD.CMD.INIT, new Uint8Array([+$("drv").value]));
-  await sleep(600);
-  prog.textContent = "驱动已下发（" + $("drv").selectedOptions[0].text + "）。可以推图了。";
-}
-
 async function pushToEPD(){
-  if(!EPD.chr){ alert("请先点「连接设备」"); return; }
+  if(!EPD.chr){ bleStat("请先点「连接设备」。", true); return; }
   if(!LAST) draw();
-  const btn = $("pushbtn"), prog = $("pushprog");
+  const btn = $("pushbtn");
   btn.disabled = true;
   try{
     const w = LAST.w, h = LAST.h, bits = LAST.bits;
     const stride = Math.ceil(w/8);
     const raw = new Uint8Array(stride*h);
-    // 关键：1 = 白，0 = 黑（与常见约定相反）
-    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    // 该固件 1=白、0=黑
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++)
       if(!bits[y*w+x]) raw[y*stride + (x>>3)] |= 0x80 >> (x&7);
-    }
 
-    // 1) 先初始化
-    await epdWrite(EPD.CMD.INIT, new Uint8Array([+$("drv").value]));
-    await sleep(400);
+    // 1) 下发引脚 + 驱动（不清屏），否则面板未初始化必花屏
+    const pins = EPD.pins ? new Uint8Array(EPD.pins)
+                          : new Uint8Array([0,0,0,0,0,0,0]);
+    await epdWrite(EPD.CMD.SET_PINS, pins);
+    await sleep(120);
+    await epdWrite(EPD.CMD.INIT, new Uint8Array([EPD.DRV]));
+    await sleep(500);
 
-    // 2) 分片推送（留 1 字节指令码 + 1 字节头）
+    // 2) 分片
     const chunk = Math.max(8, EPD.mtu - 2);
     const total = Math.ceil(raw.length / chunk);
-    prog.textContent = `推送中 0/${total}（${raw.length} 字节）…`;
-
     for(let i=0;i<total;i++){
       const slice = raw.subarray(i*chunk, Math.min(raw.length, (i+1)*chunk));
       const payload = new Uint8Array(slice.length + 1);
-      if(EPD.rle){
-        payload[0] = (i===0 ? 0x02 : 0x00);              // 新版：首片 0x02
-      } else {
-        payload[0] = (i===0 ? 0x0F : 0xF0) | 0x0F;      // 旧版：0x0F / 0xFF
-      }
+      payload[0] = EPD.rle ? (i===0 ? 0x02 : 0x00) : ((i===0 ? 0x0F : 0xF0) | 0x0F);
       payload.set(slice, 1);
       await epdWrite(EPD.CMD.WRITE_IMG, payload);
-      if(i % 3 === 2 || i === total-1){
-        prog.textContent = `推送中 ${i+1}/${total}（${Math.round(100*(i+1)/total)}%）`;
+      if(i % 4 === 3 || i === total-1){
+        bleStat(`正在推送 ${i+1}/${total}…`);
         await sleep(15);
       }
     }
@@ -1101,17 +1045,16 @@ async function pushToEPD(){
     // 3) 刷新
     await epdWrite(EPD.CMD.REFRESH);
     await sleep(150);
-    await epdWrite(EPD.CMD.REFRESH);      // 三色屏固件有时需要两次
-    prog.textContent = "✅ 已推送 " + total + " 片并刷新。屏幕正在更新，请勿断电。";
+    await epdWrite(EPD.CMD.REFRESH);
+    bleStat("已推送，屏幕正在刷新，请勿断电。");
   }catch(e){
-    prog.textContent = "推送失败：" + (e && e.message ? e.message : e);
+    bleStat("推送失败：" + (e && e.message ? e.message : e), true);
   }
   btn.disabled = false;
 }
 
 $("blebtn").onclick = bleConnect;
 $("bledis").onclick = bleDisconnect;
-$("applybtn").onclick = applyDriver;
 $("pushbtn").onclick = pushToEPD;
 window.addEventListener("beforeunload", function(){ try{ EPD.dev && EPD.dev.gatt.disconnect(); }catch(e){} });
 
