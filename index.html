@@ -79,7 +79,7 @@
 <body>
 <header>
   <h1>墨水屏库存便利贴</h1>
-  <span class="sub">分栏卡片 → 1bit 位图（阶段一）</span>
+  <span class="sub" id="build">…</span>
 </header>
 
 <main>
@@ -183,6 +183,9 @@
 
 <script>
 "use strict";
+const BUILD = "v4-push";
+$("build").textContent = "构建 " + BUILD + " · 分栏卡片 → 1bit 位图";
+
 const $ = id => document.getElementById(id);
 const FONT = '"PingFang SC","Hiragino Sans GB","Heiti SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif';
 
