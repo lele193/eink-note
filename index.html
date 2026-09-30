@@ -109,8 +109,7 @@
     <legend>墨水屏</legend>
     <div class="addrow">
       <button class="pri" id="blebtn">连接设备</button>
-      <button id="pushbtn" disabled>推送清单</button>
-      <button id="bledis">断开</button>
+      <button id="rebtn">重连</button>
     </div>
     <div class="hint" id="blestat">先连接，再推送。</div>
   </fieldset>
@@ -160,24 +159,13 @@
 
 
 
-  <fieldset>
-    <legend>导出</legend>
-    <div class="btns">
-      <button class="pri" id="dlpng">下载 1bit PNG</button>
-      <button id="cphex">复制帧缓冲</button>
-      <button id="dlhex">下载 .txt</button>
-    </div>
-    <details><summary>帧缓冲 HEX 预览</summary>
-      <textarea class="hex" id="hexout" readonly spellcheck="false"></textarea>
-      <div class="hint">格式 <code>FW:&lt;偏移&gt;:&lt;hex&gt;</code>，末行补 <code>FAPPLY</code>。MSB 在左，黑 = 1。</div>
-    </details>
-  </fieldset>
 
 </div>
 
 <div class="stage">
   <fieldset class="previewbox">
     <legend>预览</legend>
+    <button class="pri" id="pushbtn" disabled style="width:100%;margin:0 0 4px">推送清单</button>
     <canvas id="preview" title="点击可全屏放大"></canvas>
     <div class="meta" id="meta"></div>
   </fieldset>
@@ -200,7 +188,7 @@ window.addEventListener("error", function(ev){
 });
 const $ = id => document.getElementById(id);
 
-const BUILD = "v9-clean";
+const BUILD = "v10-simple";
 $("build").textContent = "构建 " + BUILD + " · 分栏卡片 → 1bit 位图";
 const FONT = '"PingFang SC","Hiragino Sans GB","Heiti SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif';
 
@@ -734,7 +722,6 @@ function draw(){
   const bits = binarise(img);
   LAST = {w:phys.width, h:phys.height, bits, src:phys};
   paint(bits, phys);
-  $("hexout").value = fwText(bits, phys.width, phys.height);
   updateMeta(cats, L, phys, bits);
 }
 
@@ -871,34 +858,20 @@ function fwText(bits,w,h){
   return out.join("\n");
 }
 
+/* updateMeta：紧凑单行，详细信息放 title */
+
 function updateMeta(cats,L,phys,bits){
-  const w=phys.width,h=phys.height, stride=Math.ceil(w/8);
-  const ink = bits.reduce((a,b)=>a+b,0);
-  let s = `物理 ${w}×${h}px  ·  ${P.cols} 栏  ·  1bpp  ·  帧缓冲 ${stride*h} 字节`;
-  s += `\n${cats.length} 个分类 · ${cats.reduce((a,c)=>a+c.items.length,0)} 个条目 · 墨水覆盖率 ${(100*ink/bits.length).toFixed(1)}%`;
+  const w=LAST.w,h=LAST.h, stride=Math.ceil(w/8);
+  const n = cats.reduce((a,c)=>a+c.items.length,0);
   const warn = [...new Set(L.warn)];
-  if(warn.length) s += "\n⚠ " + warn.join("\n⚠ ");
-  if(P.stretch) s += "\n（卡片已撑满整栏高度，未填满的部分是留白，不是漏排）";
-  $("meta").textContent = s;
-  $("meta").className = L.warn.length ? "meta warn" : "meta";
+  const el = $("meta");
+  el.textContent = w + "\u00d7" + h + " \u00b7 " + P.cols + "\u680f \u00b7 " + cats.length + "\u7c7b" + n + "\u9879"
+                 + (warn.length ? " \u00b7 \u26a0" : "");
+  el.title = (warn.length ? warn.join("\n") + "\n" : "") + "1bpp \u5e27\u7f13\u51b2 " + (stride*h) + " \u5b57\u8282";
+  el.className = warn.length ? "meta warn" : "meta";
 }
 
-/* ---------------- 导出 ---------------- */
-function download(name,url){ const a=document.createElement("a"); a.href=url; a.download=name; a.click(); }
-$("dlpng").onclick = ()=>{
-  if(!LAST) return;
-  LAST.src.toBlob(b=>download(`eink-${LAST.w}x${LAST.h}.png`, URL.createObjectURL(b)),"image/png");
-};
-$("cphex").onclick = async ()=>{
-  const t=$("hexout").value;
-  try{ await navigator.clipboard.writeText(t); $("cphex").textContent="已复制 ✓"; }
-  catch(e){ $("hexout").select(); document.execCommand("copy"); $("cphex").textContent="已复制 ✓"; }
-  setTimeout(()=>$("cphex").textContent="复制帧缓冲",1300);
-};
-$("dlhex").onclick = ()=>{
-  const b=new Blob([$("hexout").value+"\n"],{type:"text/plain"});
-  download(`eink-${LAST.w}x${LAST.h}-fw.txt`,URL.createObjectURL(b));
-};
+/* ---------------- 导出（已移除，保留 pack 供后续用） ---------------- */
 
 /* ---------------- 交互 ----------------
    排版参数全部锁死在 DEFAULTS，界面上不再暴露；
@@ -1064,19 +1037,44 @@ async function bleConnect(){
     }catch(e){}
 
     $("pushbtn").disabled = false;
-    $("blebtn").textContent = "重新连接";
     bleStat("已连接，可以推送清单。");
   }catch(e){
     bleStat("连接失败：" + (e && e.message ? e.message : e), true);
   }
 }
 
-function bleDisconnect(){
-  try{ if(EPD.dev && EPD.dev.gatt.connected) EPD.dev.gatt.disconnect(); }catch(e){}
-  EPD.connected = false; EPD.chr = null;
+/* 重连：先断开再接回同一台设备；没有设备记录时等同「连接设备」 */
+async function bleReconnect(){
+  if(!EPD.dev){ bleConnect(); return; }
+  bleStat("正在重连…");
+  try{ if(EPD.dev.gatt.connected) EPD.dev.gatt.disconnect(); }catch(e){}
+  await sleep(600);
   $("pushbtn").disabled = true;
-  $("blebtn").textContent = "连接设备";
-  bleStat("已断开。");
+  EPD.chr = null; EPD.connected = false; EPD.pins = null;
+  try{
+    const server = await EPD.dev.gatt.connect();
+    const svc = await server.getPrimaryService(EPD.svc);
+    EPD.chr = await svc.getCharacteristic(EPD.write);
+    EPD.connected = true;
+    let first = true;
+    try{
+      await EPD.chr.startNotifications();
+      EPD.chr.addEventListener("characteristicvaluechanged", ev=>{
+        const u8 = new Uint8Array(ev.target.value.buffer, ev.target.value.byteOffset, ev.target.value.byteLength);
+        if(first){ first = false;
+          EPD.pins = Array.prototype.slice.call(u8, 0, 7);
+          if(u8.length > 10) EPD.pins.push(u8[10]);
+          return; }
+        const msg = new TextDecoder().decode(u8);
+        if(msg.indexOf("mtu=") === 0){ const n=parseInt(msg.substring(4),10); if(n>0) EPD.mtu=n; }
+        if(msg.indexOf("rle=1") >= 0) EPD.rle = true;
+      });
+    }catch(e){}
+    $("pushbtn").disabled = false;
+    bleStat("已重新连接。");
+  }catch(e){
+    bleStat("重连失败：" + (e && e.message ? e.message : e) + "，可再点一次「连接设备」。", true);
+  }
 }
 
 async function epdWrite(cmd, payload){
@@ -1136,7 +1134,7 @@ async function pushToEPD(){
 }
 
 $("blebtn").onclick = bleConnect;
-$("bledis").onclick = bleDisconnect;
+$("rebtn").onclick = bleReconnect;
 $("pushbtn").onclick = pushToEPD;
 window.addEventListener("beforeunload", function(){ try{ EPD.dev && EPD.dev.gatt.disconnect(); }catch(e){} });
 
