@@ -123,12 +123,18 @@
 
   <fieldset>
     <legend>墨水屏</legend>
+    <label>正在编辑的设备</label>
     <div class="addrow">
+      <select id="devsel"></select>
+      <button id="newdev">新建</button>
+    </div>
+    <div class="hint">每块屏一份清单。连接后会自动切到那台屏的档案。</div>
+    <div class="addrow" style="margin-top:8px">
       <button class="pri" id="blebtn">连接设备</button>
       <button id="rebtn">重连</button>
     </div>
     <div class="hint" id="blestat">先连接，再推送。</div>
-    <div class="btns"><button id="restorebtn">恢复上一版清单</button></div>
+    <div class="btns"><button id="deldev">删除此档案</button></div>
   </fieldset>
 
 
@@ -182,7 +188,10 @@
 <div class="stage">
   <fieldset class="previewbox">
     <legend>预览</legend>
-    <button class="pri" id="pushbtn" disabled style="width:100%;margin:0 0 4px">推送清单</button>
+    <div class="btns" style="width:100%;justify-content:center">
+      <button class="pri" id="pushbtn" disabled>推送清单</button>
+      <button id="restorebtn">恢复上一版</button>
+    </div>
     <div class="hint pushstat" id="pushstat"></div>
     <canvas id="preview" title="点击可全屏放大"></canvas>
     <div class="meta" id="meta"></div>
@@ -208,7 +217,7 @@ window.addEventListener("error", function(ev){
 });
 const $ = id => document.getElementById(id);
 
-const BUILD = "v15";
+const BUILD = "v16";
 $("build").textContent = "构建 " + BUILD;
 const FONT = '"PingFang SC","Hiragino Sans GB","Heiti SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif';
 
@@ -969,85 +978,133 @@ $("resetgeom") && ($("resetgeom").onclick = ()=>{
 
 let tm=null;
 function run(){ clearTimeout(tm); tm=setTimeout(()=>{ try{ draw(); }catch(e){ $("meta").textContent="错误: "+e.message; $("meta").className="meta warn"; } }, 60); }
-const STORE  = "eink-inv/v12";     // 当前存档
-const BACKUP = "eink-inv/backup";  // 上一版清单（保险）
+/* ================= 按设备分档存储 =================
+   多块墨水屏内容各不相同 → 每台屏一份清单，按设备名区分。
+   连接哪台就编辑/推送哪台；不连接也能提前编辑。 */
+const STORE = "eink-inv/v16";
+
+const DEFAULT_DEV = "默认档案";
 
 function statOf(src){
   const cats = parse(String(src || ""));
   return { cats: cats.length, items: cats.reduce((a,c)=>a+c.items.length, 0) };
 }
 
-// 保存：先备份上一版；一旦发现「清单突然少了一半以上」，自动回滚
-function save(){
-  try{
-    const prev = localStorage.getItem(STORE);
-    if(prev){
-      const oldSrc = (JSON.parse(prev)||{}).src;
-      if(typeof oldSrc === "string" && oldSrc.trim()){
-        const a = statOf(oldSrc), b = statOf($("src").value);
-        // 明显异常才回滚：正常删除都是一次点一个 ✕，不会突然掉一半
-        const wipe  = (a.items > 0 && b.items === 0);
-        const halfItems = (a.items >= 6 && b.items < a.items * 0.5);
-        const halfCats  = (a.cats  >= 3 && b.cats  < a.cats  * 0.5);
-        if(wipe || halfItems || halfCats){
-          localStorage.setItem(BACKUP, prev);
-          $("src").value = oldSrc;                       // 回滚
-          setTimeout(function(){
-            if(LAST) { draw(); }
-            renderCats(); renderMatches();
-            toast("清单异常变少，已自动恢复上一版");
-          }, 30);
-          return;
-        }
-        localStorage.setItem(BACKUP, prev);              // 正常情况也留一份上一版
-      }
-    }
-    localStorage.setItem(STORE, JSON.stringify({
-      src:$("src").value, title:P.title, hdrstyle:P.hdrstyle, hdrgray:P.hdrgray
-    }));
-  }catch(e){}
-}
+let DB = { current: DEFAULT_DEV, devices: {} };
+let DIRTY = false;                 // 当前内容已改但还没落库（切换档前用得上）
 
-function load(){
+function dbRead(){
   try{
-    const r=localStorage.getItem(STORE);
-    if(!r) return false;
-    const s=JSON.parse(r);
-    if(s.src) $("src").value=s.src;
-    if(s.title) P.title=s.title;
-    if(s.hdrstyle) P.hdrstyle=s.hdrstyle;
-    if(typeof s.hdrgray==="number") P.hdrgray=s.hdrgray;
+    const raw = localStorage.getItem(STORE);
+    if(!raw) return false;
+    const d = JSON.parse(raw);
+    if(!d || !d.devices) return false;
+    DB = d;
     return true;
   }catch(e){ return false; }
 }
 
-function flashVerdict(html){
-  const v = $("verdict");
-  v.hidden = false;
-  v.innerHTML = html;
+function dbWrite(){
+  try{ localStorage.setItem(STORE, JSON.stringify(DB)); }catch(e){}
 }
 
-/* 认不出归类时，直接弹出所有栏目让用户点一下 */
-function askCategory(cats, name, n){
-  const v = $("verdict");
-  v.hidden = false;
-  v.innerHTML = `<div style="margin-bottom:8px">认不出「<b>${esc(name)}</b>」该归哪一栏，点一下：</div>`;
-  const row = document.createElement("div");
-  row.style.cssText = "display:flex;flex-wrap:wrap;gap:6px";
-  for(const c of cats){
-    const b = document.createElement("button");
-    b.className = "chip";
-    b.innerHTML = `<b style="color:#e6e8ee">${esc(c.title)}</b><span class="who">${c.items.length} 项</span>`;
-    b.onclick = ()=>{
-      const qty = n != null ? n : 1;
-      addItem(c.title, name, n);
-      $("quick").value = "";
-      flashVerdict(`已添加 <b>${esc(name)} ×${qty}</b> 到「<b>${esc(c.title)}</b>」`);
-    };
-    row.appendChild(b);
-  }
-  v.appendChild(row);
+function devList(){
+  return Object.keys(DB.devices)
+    .filter(k => k.indexOf("__backup__") !== 0)     // 备份不算档案
+    .sort((a,b)=> a === DB.current ? -1 : b === DB.current ? 1 : a.localeCompare(b));
 }
+
+function curDev(){ return DB.devices[DB.current] || null; }
+
+// 切档：把当前编辑内容存回原档，再载入目标档
+// seed: 新建时的初始内容（手动新建用空清单；连接新设备则复制当前内容当起点）
+function switchDev(name, seed){
+  if(!DB.devices[name]){
+    DB.devices[name] = { title: "备货库存", src: (seed != null ? seed : ""), hdrstyle: "gray" };
+  }
+  DB.current = name;
+  const d = DB.devices[name];
+  $("src").value = d.src;
+  $("title").value = d.title;
+  $("hdrstyle").value = d.hdrstyle;
+  readAll(); draw(); renderCats(); renderMatches(); renderDevSel();
+  dbWrite();
+}
+
+function renderDevSel(){
+  const sel = $("devsel");
+  if(!sel) return;
+  sel.innerHTML = "";
+  for(const n of devList()){
+    const o = document.createElement("option");
+    o.value = n; o.textContent = n;
+    sel.appendChild(o);
+  }
+  if(!DB.devices[DB.current]){
+    DB.devices[DB.current] = { title: $("title").value || "备货库存",
+                               src: $("src").value, hdrstyle: $("hdrstyle").value };
+  }
+  sel.value = DB.current;
+}
+
+// 保存当前档：先做异常回滚保险，再落库
+function save(){
+  const name = DB.current;
+  const d = DB.devices[name] || (DB.devices[name] = {});
+  const prev = d.src;
+  const now = $("src").value;
+
+  if(typeof prev === "string" && prev.trim()){
+    const a = statOf(prev), b = statOf(now);
+    if(a.items === 0){ d.src = now; d.title = $("title").value;
+                      d.hdrstyle = $("hdrstyle").value; dbWrite(); return; }  // 原本是空档，随便填
+    const wipe  = (a.items > 0 && b.items === 0);
+    const halfItems = (a.items >= 6 && b.items < a.items * 0.5);
+    const halfCats  = (a.cats  >= 3 && b.cats  < a.cats  * 0.5);
+    if(wipe || halfItems || halfCats){
+      // 回滚：当前内容恢复成上一版，备份另存一份供手动恢复
+      $("src").value = prev;
+      DB.devices["__backup__" + name] = { title: d.title, src: prev, hdrstyle: d.hdrstyle };
+      dbWrite();
+      setTimeout(function(){
+        draw(); renderCats(); renderMatches();
+        toast("「" + name + "」清单异常变少，已自动恢复上一版");
+      }, 30);
+      return;
+    }
+  }
+
+  d.src = now;
+  d.title = $("title").value;
+  d.hdrstyle = $("hdrstyle").value;
+  dbWrite();
+  DIRTY = false;
+}
+
+function load(){
+  const ok = dbRead();
+  if(!ok){
+    // 首次：把原来单档的数据迁进来
+    let src = SAMPLE, title = "备货库存", style = "gray";
+    try{
+      const old = JSON.parse(localStorage.getItem("eink-inv/v12") || "null");
+      if(old && typeof old.src === "string" && old.src.trim()) src = old.src;
+      if(old && old.title) title = old.title;
+      if(old && old.hdrstyle) style = old.hdrstyle;
+    }catch(e){}
+    DB = { current: DEFAULT_DEV, devices: {} };
+    DB.devices[DEFAULT_DEV] = { title: title, src: src, hdrstyle: style };
+    dbWrite();
+  }
+  if(!DB.devices[DB.current]) DB.current = DEFAULT_DEV;
+  const d = curDev() || { title: "备货库存", src: SAMPLE, hdrstyle: "gray" };
+  $("src").value = d.src;
+  $("title").value = d.title;
+  $("hdrstyle").value = d.hdrstyle;
+  return true;
+}
+
+
 
 /* ================= 墨水屏推送（tsl0922/EPD-nRF5 协议） =================
    Service      62750001-d828-918d-fb46-b6c11c675aec
@@ -1116,7 +1173,11 @@ async function bleConnect(){
     }catch(e){}
 
     $("pushbtn").disabled = false;
-    bleStat("已连接，可以推送清单。");
+    // 关键：按设备名自动切到那块屏自己的档案
+    const name = (EPD.dev.name || "").trim() || DEFAULT_DEV;
+    if(DB.current !== name) switchDev(name, $("src").value);
+    renderDevSel();
+    bleStat("已连接：" + name);
     pushStat("");
   }catch(e){
     bleStat("连接失败：" + (e && e.message ? e.message : e), true);
@@ -1151,7 +1212,10 @@ async function bleReconnect(){
       });
     }catch(e){}
     $("pushbtn").disabled = false;
-    bleStat("已重新连接。");
+    const nm2 = (EPD.dev.name || "").trim() || DEFAULT_DEV;
+    if(DB.current !== nm2) switchDev(nm2, $("src").value);
+    renderDevSel();
+    bleStat("已重新连接：" + nm2);
     pushStat("");
   }catch(e){
     bleStat("重连失败：" + (e && e.message ? e.message : e) + "，可再点一次「连接设备」。", true);
@@ -1275,23 +1339,51 @@ $("quickdel").addEventListener("keydown", e=>{ if(e.key === "Enter"){ e.preventD
   });
 });
 
-if(!load()) $("src").value = SAMPLE;
-fillInputs(); readAll(); draw(); renderCats();
+load();
+fillInputs(); readAll(); draw(); renderCats(); renderDevSel();
 $("preview").onclick = openZoom;
 $("zoomlay").onclick = closeZoom;
 $("restorebtn").onclick = function(){
-  try{
-    const b = localStorage.getItem(BACKUP);
-    if(!b){ toast("没有可恢复的备份"); return; }
-    const oldSrc = (JSON.parse(b)||{}).src;
-    const a = statOf($("src").value), o = statOf(oldSrc);
-    if(!confirm("将用上一版清单替换当前清单：\n当前 " + a.cats + " 类 / " + a.items + " 项"
-              + "\n备份 " + o.cats + " 类 / " + o.items + " 项\n\n继续？")) return;
-    $("src").value = oldSrc;
-    draw(); renderCats(); renderMatches();
-    localStorage.setItem(STORE, b);      // 恢复后同步主存档
-    toast("已恢复上一版清单");
-  }catch(e){ toast("恢复失败：" + e); }
+  const key = "__backup__" + DB.current;
+  const b = DB.devices[key];
+  if(!b || typeof b.src !== "string"){ toast("这个档案没有备份"); return; }
+  const a = statOf($("src").value), o = statOf(b.src);
+  if(!confirm("将用上一版清单替换「" + DB.current + "」：\n当前 " + a.cats + " 类 / " + a.items + " 项"
+            + "\n备份 " + o.cats + " 类 / " + o.items + " 项\n\n继续？")) return;
+  // 当前版本先存成新的备份，避免恢复动作本身丢失数据
+  DB.devices[key] = { title: curDev().title, src: $("src").value, hdrstyle: $("hdrstyle").value };
+  $("src").value = b.src;
+  draw(); renderCats(); renderMatches(); dbWrite();
+  toast("已恢复上一版清单");
+};
+
+$("devsel").onchange = function(){
+  const n = this.value;
+  if(!n || n.indexOf("__backup__") === 0){ renderDevSel(); return; }
+  save();                       // 先把当前档存好再切
+  switchDev(n);
+};
+
+$("newdev").onclick = function(){
+  const n = (prompt("新档案名称（连接后也会自动按设备名建档）：", "墨水屏-" + (devList().length)) || "").trim();
+  if(!n || n.indexOf("__backup__") === 0) return;
+  save();
+  switchDev(n);
+  toast("已新建「" + n + "」");
+};
+
+$("deldev").onclick = function(){
+  const n = DB.current;
+  const names = devList();
+  if(names.length <= 1){ toast("至少保留一个档案"); return; }
+  if(!confirm("删除档案「" + n + "」？该屏的清单会一起删掉。")) return;
+  save();
+  delete DB.devices[n];
+  delete DB.devices["__backup__" + n];
+  const next = names.find(x => x !== n && x.indexOf("__backup__") !== 0) || DEFAULT_DEV;
+  DB.current = next;
+  switchDev(DB.devices[next] ? next : DEFAULT_DEV);
+  toast("已删除「" + n + "」");
 };
 document.addEventListener("keydown", function(e){ if(e.key === "Escape") closeZoom(); });
 window.__booted = true;
