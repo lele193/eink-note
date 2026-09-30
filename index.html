@@ -57,9 +57,10 @@
   button.pri{background:var(--acc);border-color:var(--acc);color:#07101f;font-weight:600}
   #preview{background:#fff;border-radius:3px;box-shadow:0 6px 20px rgba(0,0,0,.5);
     image-rendering:pixelated;display:block}
-  .meta{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--dim);text-align:center;
-    line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-  .meta.warn{color:#ffb454}
+  .meta{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:#9aa2b0;opacity:.65;
+    text-align:center;line-height:1.5;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;max-width:100%}
+  .meta.warn{color:#9aa2b0;opacity:.65}
   details{margin-top:8px}summary{font-size:12px;color:var(--dim);cursor:pointer}
   textarea.hex{font-size:11px;min-height:120px}
 
@@ -188,7 +189,7 @@ window.addEventListener("error", function(ev){
 });
 const $ = id => document.getElementById(id);
 
-const BUILD = "v10-simple";
+const BUILD = "v11-slim";
 $("build").textContent = "构建 " + BUILD + " · 分栏卡片 → 1bit 位图";
 const FONT = '"PingFang SC","Hiragino Sans GB","Heiti SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif';
 
@@ -206,7 +207,7 @@ const DEFAULTS = {
   // 标题条
   title:"备货库存", tfs:38, tfw:500,
   hdrfull:true, hdrstyle:"gray", hdrgray:0.5,
-  hdrline:false, hdrlinew:20,
+  hdrline:false, hdrlinew:15,
   // 卡片文字
   cfs:18, ifs:13, lht:145, tgap:3,
   autofit:true, nowrap:true, minfs:10, light:false,
@@ -462,8 +463,8 @@ function layout(design, cats){
   const font = (s,w)=>`${w} ${s}px ${FONT}`;
   const L = {warn:[]};
 
-  // 顶部标题条：灰底条高度取「字号所需高度」与「比例设定」的较大者，并保证装得下反白字
-  const wantH = Math.round(P.tfs * 2.05);                     // 字 + 上下留白
+  // 顶部标题条：高度按字号紧凑计算（不再留过多空白），字号本身不受影响
+  const wantH = Math.round(P.tfs * 1.45);                     // 字高 + 少量上下留白
   const hdrH = Math.max(Math.round(H * P.hdrlinew/100), wantH);
   L.hdrH = hdrH;
   L.bandInset = Math.round(W*0.03);
