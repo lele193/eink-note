@@ -2,6 +2,9 @@
 
 把清单内容（分栏卡片）渲染成 1bit 位图，通过蓝牙直接推送到墨水屏。
 
+> **第一次看这份，请先打开 `使用指南.md`** —— 那边是按「你想做什么」组织的操作步骤。
+> 本文件是技术参考（协议、参数、故障排查）。
+
 - **编辑页面**：`index.html` —— 单文件、零依赖，双击就能开
 - **线上地址**：https://lele193.github.io/eink-note/ （HTTPS，手机用 Bluefy 打开可推图）
 
@@ -115,10 +118,12 @@ https://lele193.github.io/eink-note/?b=v18
 ```
 eink-note/
 ├── index.html      ← 主程序，全部功能都在这一个文件里（1396 行）
+├── 使用指南.md      ← 【先看这个】按目的组织的操作步骤
+├── README.md       ← 本文件，技术参考
+├── check-env.sh    ← 环境自检
 ├── serve.py        ← 本地服务器（手机同 Wi-Fi 访问用）
 ├── probe.py        ← BLE 扫描工具：看周围有哪些蓝牙设备
 ├── probe_deep.py   ← BLE 深度探测：连接设备并 dump 全部服务/特征
-├── README.md       ← 本文件
 └── .gitignore
 ```
 
